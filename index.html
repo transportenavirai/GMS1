@@ -370,8 +370,6 @@ footer p{font-size:10px;color:var(--muted)}
 // Planilha: https://docs.google.com/spreadsheets/d/1GHrRstraI4HAaYeaDWCwgvVVpJua1iTwYFCDdLkHotU
 // Aba Registro Geral (gid=936830313) — estatísticas
 // Aba SHARE (gid=1682988408) — escala do dia
-// Planilha: https://docs.google.com/spreadsheets/d/1GHrRstraI4HAaYeaDWCwgvVVpJua1iTwYFCDdLkHotU
-// Aba: Registro Geral (gid=936830313)
 const CSV_URL    = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=936830313&single=true&output=csv";
 const SHARE_URL   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=1682988408&single=true&output=csv";
 const REFRESH_MS = 60 * 1000;
@@ -422,98 +420,120 @@ function parseCSV(text) {
 
 // ── PARSE CSV DA ABA SHARE ────────────────────────────────────────────
 function parseShare(text) {
-  // Estrutura da aba SHARE:
-  // A=Placa  B=Motorista  C=Veiculo(col D)  D=Destino  E=Saida  F=Pacientes  G=Obs  H=Data Saida
-  const out   = [];
-  const hoje  = new Date(); hoje.setHours(0,0,0,0);
-  const meses = ["","JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+  // Estrutura aba SHARE:
+  // A=Placa  B=MOTORISTA  C=VEICULO  D=DESTINO  E=SAIDA  F=PACIENTES  G=OBS  H=Data Saida
+  // Cabeçalho na linha 1 — ignorado
+  // Linhas com motorista "---" = veículos reserva sem motorista → descartar
+  // Linhas sem data válida → descartar
+  // Datas passadas → descartar
 
-  function splitCSV(line) {
-    const p=[]; let cur="", inQ=false;
-    for(let i=0;i<line.length;i++){
-      const c=line[i];
-      if(c==='"'){inQ=!inQ;}
-      else if(c===','&&!inQ){p.push(cur.trim());cur="";}
-      else cur+=c;
+  // ── Parser CSV robusto: une linhas físicas que fazem parte do mesmo registro ──
+  function parseRecords(raw) {
+    const records = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (c === '"') {
+        inQ = !inQ;
+        cur += c;
+      } else if (c === '\n' && !inQ) {
+        records.push(cur.replace(/\r$/, ''));
+        cur = '';
+      } else {
+        cur += c;
+      }
     }
-    p.push(cur.trim()); return p;
+    if (cur.trim()) records.push(cur);
+    return records;
   }
 
-  function parseData(s) {
-    if (!s) return null;
-    s = s.replace(/['"]/g,'').trim();
-    // DD/MM/YYYY ou D/M/YYYY
-    let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-    if (m) {
-      const y = parseInt(m[3]) < 100 ? 2000+parseInt(m[3]) : parseInt(m[3]);
-      const d = new Date(y, parseInt(m[2])-1, parseInt(m[1]));
-      d.setHours(0,0,0,0); return d;
+  function splitLine(line) {
+    const p = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { p.push(cur.trim()); cur = ''; }
+      else { cur += c; }
     }
-    return null;
+    p.push(cur.trim());
+    // Remove aspas externas de cada campo
+    return p.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+  }
+
+  function parseDataBR(s) {
+    if (!s) return null;
+    s = s.replace(/\n|\r/g, ' ').trim();
+    // Pega a ÚLTIMA data no formato DD/MM/YYYY (para campos como "FERIAS DE 02/03 A 16/03/2026")
+    const matches = [...s.matchAll(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g)];
+    if (!matches.length) return null;
+    const m = matches[matches.length - 1]; // última data = data de fim/referência
+    const d = new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+    d.setHours(0,0,0,0);
+    return d;
   }
 
   function fmtDt(d) {
-    if (!d) return "";
     return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();
   }
 
-  const lines = text.split(/\r?\n/);
+  const out  = [];
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
 
-  // Encontra cabeçalho: linha que contém "MOTORISTA"
-  let dataStart = 0;
-  for (let i=0; i<Math.min(lines.length,10); i++) {
-    const up = lines[i].toUpperCase();
-    if (up.includes("MOTORISTA") && up.includes("DESTINO")) { dataStart = i+1; break; }
-  }
+  // Une linhas físicas que pertencem ao mesmo registro CSV
+  const records = parseRecords(text);
 
-  for (let li=dataStart; li<lines.length; li++) {
-    const p = splitCSV(lines[li]);
+  for (let li = 1; li < records.length; li++) { // li=1 pula cabeçalho
+    const p = splitLine(records[li]);
     if (p.length < 2) continue;
 
-    const placa    = (p[0]||"").trim();
-    const motorista= (p[1]||"").trim().toUpperCase();
-    const veiculo  = (p[2]||"").trim();  // coluna C = Veiculo
-    const destino  = (p[3]||"").trim();  // coluna D = Destino
-    const saida    = (p[4]||"").trim();  // coluna E = Saida
-    const pacientes= (p[5]||"").trim();  // coluna F = Pacientes
-    const obs      = (p[6]||"").trim();  // coluna G = Obs
-    const dataBrut = (p[7]||"").trim();  // coluna H = Data Saida
+    const placa    = (p[0] || '').trim();
+    const motorista= (p[1] || '').trim().toUpperCase();
+    const veiculo  = (p[2] || '').trim();
+    const destino  = (p[3] || '').trim();
+    const saida    = (p[4] || '').trim();
+    const pacientes= (p[5] || '').trim();
+    const obs      = (p[6] || '').trim();
+    const dataBrut = (p[7] || '').trim();
 
     // ── Filtros de limpeza ──────────────────────────────────────────
-    // Sem motorista real
     if (!motorista) continue;
-    if (/^[-–—\s=*]+$/.test(motorista)) continue;          // só traços
-    if (motorista === "MOTORISTA") continue;                  // cabeçalho
-    if (/^\d/.test(motorista)) continue;                     // começa com número
-    if (motorista.length > 25) continue;                      // texto solto longo
-    // Rejeita linhas de aviso ("PODENDO HAVER MUDANÇAS" etc)
-    if (motorista.includes("PODENDO")||motorista.includes("MUDAN")) continue;
+    if (/^[-–—\s]+$/.test(motorista)) continue;        // só traços
+    if (motorista === 'MOTORISTA') continue;             // cabeçalho
+    if (/^\d/.test(motorista)) continue;                 // começa com número
+    if (motorista.length > 25) continue;                 // texto solto longo
+    if (motorista.includes('PODENDO') || motorista.includes('MUDAN')) continue;
 
-    // ── Data ────────────────────────────────────────────────────────
-    const dataObj = parseData(dataBrut);
-    // Ignora datas passadas (antes de hoje)
-    if (dataObj && dataObj < hoje) continue;
-    const isHoje = dataObj ? dataObj.getTime() === hoje.getTime() : false;
-    const dtStr  = dataObj ? fmtDt(dataObj) : (dataBrut ? dataBrut.trim() : "");
+    // ── Rejeita sem data ────────────────────────────────────────────
+    if (!dataBrut) continue;
+    const dataObj = parseDataBR(dataBrut);
+    if (!dataObj) continue;
+
+    // ── Rejeita datas passadas ──────────────────────────────────────
+    if (dataObj < hoje) continue;
+
+    const isHoje = dataObj.getTime() === hoje.getTime();
+    const dtStr  = fmtDt(dataObj);
+
+    // ── Veículo: col C se válida, senão col A (placa) ───────────────
+    const veiExibir = (veiculo && !/^[-–—\s]+$/.test(veiculo)) ? veiculo : placa;
 
     // ── Status ──────────────────────────────────────────────────────
-    const DU = destino.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-    let status = "ativo";
-    if      (DU.includes("FERIAS")||DU.includes("RECESSO"))  status="ferias";
-    else if (DU.includes("RURAL"))                            status="rural";
-    else if (DU.includes("HEMODIALISE")||DU.includes("HEMO"))status="hemo";
-    else if (DU.includes("MALOTE"))                           status="malote";
-    else if (!destino||/^[-–—\s]+$/.test(destino)||DU.includes("DISPONIVEL")) status="disponivel";
+    const DU = destino.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    let status = 'ativo';
+    if      (DU.includes('FERIAS') || DU.includes('RECESSO'))    status = 'ferias';
+    else if (DU.includes('RURAL'))                                status = 'rural';
+    else if (DU.includes('HEMODIALISE') || DU.includes('HEMO'))  status = 'hemo';
+    else if (DU.includes('MALOTE'))                               status = 'malote';
+    else if (!destino || /^[-–—\s]+$/.test(destino) || DU.includes('DISPONIVEL')) status = 'disponivel';
 
-    out.push({ placa, motorista, veiculo, destino, saida, pacientes, obs, dt: dtStr, dataObj, status, isHoje });
+    out.push({ placa, motorista, veiculo: veiExibir, destino, saida, pacientes, obs, dt: dtStr, dataObj, status, isHoje });
   }
 
-  // Ordena por data → horário de saída
-  out.sort((a,b) => {
-    const da = a.dataObj ? a.dataObj.getTime() : 9e15;
-    const db = b.dataObj ? b.dataObj.getTime() : 9e15;
-    if (da!==db) return da-db;
-    return (a.saida||"99:99").localeCompare(b.saida||"99:99");
+  // Ordena: por data → por horário de saída
+  out.sort((a, b) => {
+    const da = a.dataObj.getTime(), db = b.dataObj.getTime();
+    if (da !== db) return da - db;
+    return (a.saida || '99:99').localeCompare(b.saida || '99:99');
   });
 
   return out;
@@ -685,11 +705,11 @@ function render(){
 
 // ── RENDER ESCALA DO DIA ──────────────────────────────────────────────
 function renderEscala() {
-  const hoje   = new Date(); hoje.setHours(0,0,0,0);
-  const rows   = SHARE_ROWS;
-  const tbody  = document.getElementById("escalaTbody");
+  const hoje  = new Date(); hoje.setHours(0,0,0,0);
+  const rows  = SHARE_ROWS;
+  const tbody = document.getElementById("escalaTbody");
 
-  // KPIs
+  // ── KPIs (só conta linhas de HOJE) ──────────────────────────────
   const deHoje   = rows.filter(r => r.isHoje);
   const ativos   = deHoje.filter(r => r.status === "ativo");
   const totalPac = ativos.reduce((s,r) => s+(parseInt(r.pacientes)||0), 0);
@@ -699,76 +719,84 @@ function renderEscala() {
   document.getElementById("ekAtivos").textContent = ativos.length  || "--";
   document.getElementById("ekDest").textContent   = destinos       || "--";
   document.getElementById("ekPac").textContent    = totalPac       || "--";
-  document.getElementById("escalaCount").textContent = rows.length + " viagem" + (rows.length!==1?"s":"") + " · hoje e próximas";
-  document.getElementById("escalaInfo").textContent  = "Atualizado às " + new Date().toLocaleTimeString("pt-BR");
+  document.getElementById("escalaCount").textContent =
+    rows.length + " linha" + (rows.length!==1?"s":"") + " · hoje e próximas";
+  document.getElementById("escalaInfo").textContent =
+    "Atualizado às " + new Date().toLocaleTimeString("pt-BR");
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">📭 Nenhuma viagem encontrada na aba SHARE</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">📭 Nenhuma viagem encontrada na aba SHARE<br><small style="font-size:10px">Verifique se a aba está publicada como CSV</small></td></tr>';
     return;
   }
 
-  let html2 = "";
-  let lastDt = null;
+  let html2  = "";
+  let lastDt = "~~NUNCA~~";
 
   rows.forEach(r => {
-    // ── Separador de data ──────────────────────────────────────────
+    // ── Separador de data (só quando muda) ────────────────────────
     const dtKey = r.dt || "sem-data";
     if (dtKey !== lastDt) {
       lastDt = dtKey;
-      let sepLabel = "";
+      let label = "";
       if (r.isHoje) {
-        sepLabel = `<span style="color:var(--green)">● HOJE · ${r.dt}</span>`;
+        const diasSemana = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+        label = `<span style="color:var(--green);font-weight:800">● HOJE · ${r.dt} · ${diasSemana[hoje.getDay()]}</span>`;
       } else if (r.dataObj) {
-        const dias = Math.round((r.dataObj.getTime()-hoje.getTime())/(864e5));
-        const suf  = dias===1?"amanhã":`em ${dias} dias`;
-        sepLabel = `<span style="color:var(--accent)">${r.dt}</span> <span style="color:var(--muted);font-weight:400">· ${suf}</span>`;
+        const dias = Math.round((r.dataObj - hoje) / 864e5);
+        const suf  = dias===1 ? "amanhã" : `em ${dias} dias`;
+        label = `<span style="color:var(--accent);font-weight:700">${r.dt}</span><span style="color:var(--muted);font-weight:400;margin-left:8px">· ${suf}</span>`;
       } else {
-        sepLabel = `<span style="color:var(--muted)">${r.dt||"Sem data"}</span>`;
+        label = `<span style="color:var(--muted)">${r.dt || "Sem data"}</span>`;
       }
-      html2 += `<tr class="row-sep"><td colspan="7">${sepLabel}</td></tr>`;
+      html2 += `<tr class="row-sep"><td colspan="7">${label}</td></tr>`;
     }
 
-    // ── Células ────────────────────────────────────────────────────
-    // Data formatada na coluna
+    // ── Coluna Data ──────────────────────────────────────────────
     const dtCell = r.isHoje
-      ? `<span style="color:var(--green);font-weight:700">${r.dt}</span>`
-      : `<span style="color:var(--muted)">${r.dt||"—"}</span>`;
+      ? `<span style="color:var(--green);font-weight:700;font-size:11px">${r.dt}</span>`
+      : `<span style="color:var(--muted);font-size:11px">${r.dt||"—"}</span>`;
 
-    // Motorista com avatar colorido
-    const cor  = MOT_COLORS[r.motorista] || "var(--muted)";
-    const pts  = r.motorista.split(" ");
-    const ini  = pts.length>=2 ? pts[0][0]+pts[1][0] : r.motorista.substring(0,2);
+    // ── Coluna Motorista (avatar + nome colorido) ─────────────────
+    const cor = MOT_COLORS[r.motorista] || "#aaa";
+    const pts = r.motorista.split(" ");
+    const ini = pts.length>=2 ? pts[0][0]+pts[1][0] : r.motorista.substring(0,2);
     const motCell = `<div class="mot-cell">
       <div class="mot-av" style="background:${cor}22;color:${cor};border:1.5px solid ${cor}55">${ini}</div>
       <span class="mot-nome" style="color:${cor}">${r.motorista}</span>
     </div>`;
 
-    // Veículo — usa col C se preenchida, senão col A (placa)
-    const veiTxt = (r.veiculo && !/^[-–—\s]+$/.test(r.veiculo)) ? r.veiculo : r.placa;
-    const veiCell = veiTxt ? `<span class="vei-badge">${veiTxt}</span>` : `<span style="color:var(--border)">—</span>`;
-
-    // Destino por status
-    let destCell = "";
-    if      (r.status==="ferias")     destCell=`<span class="dest-ferias">🏖️ ${r.destino||"Férias"}</span>`;
-    else if (r.status==="rural")      destCell=`<span class="dest-rural">🌾 ${r.destino}</span>`;
-    else if (r.status==="hemo")       destCell=`<span class="dest-hemo">🏥 ${r.destino}</span>`;
-    else if (r.status==="malote")     destCell=`<span class="dest-malote">📦 ${r.destino}</span>`;
-    else if (r.status==="disponivel") destCell=`<span class="dest-disp">⬜ Disponível</span>`;
-    else                               destCell=`<span class="dest-val">📍 ${r.destino}</span>`;
-
-    // Saída
-    const saidaCell = r.saida ? `<span class="saida-val">${r.saida}</span>` : `<span style="color:var(--muted)">—</span>`;
-
-    // Pacientes
-    const pacCell = (r.pacientes && r.status==="ativo")
-      ? `<span class="pac-val">${r.pacientes}</span>`
+    // ── Coluna Veículo ───────────────────────────────────────────
+    const veiCell = r.veiculo && !/^[-–—\s]+$/.test(r.veiculo)
+      ? `<span class="vei-badge">${r.veiculo}</span>`
       : `<span style="color:var(--muted)">—</span>`;
 
-    // Obs
-    const obsCell = r.obs ? `<span class="obs-val">${r.obs}</span>` : "";
+    // ── Coluna Destino ───────────────────────────────────────────
+    let destCell = "";
+    const D = r.destino || "";
+    if      (r.status==="ferias")      destCell = `<span style="color:var(--muted);font-style:italic">🏖️ ${D||"Férias"}</span>`;
+    else if (r.status==="rural")       destCell = `<span style="color:#8ab08a">🌾 ${D}</span>`;
+    else if (r.status==="hemo")        destCell = `<span style="color:#8aaabb">🏥 ${D}</span>`;
+    else if (r.status==="malote")      destCell = `<span style="color:var(--muted)">📦 ${D}</span>`;
+    else if (r.status==="disponivel")  destCell = `<span style="color:var(--muted);font-style:italic">⬜ DISPONIVEL</span>`;
+    else destCell = `<b style="color:var(--text)">${D}</b>`;
 
-    const rowClass = r.isHoje ? "row-hoje" : "";
-    html2 += `<tr class="${rowClass}">
+    // ── Coluna Saída ─────────────────────────────────────────────
+    const saidaCell = r.saida
+      ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:var(--green)">${r.saida}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
+
+    // ── Coluna Pacientes ─────────────────────────────────────────
+    const pacCell = (r.pacientes && r.status==="ativo")
+      ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:800;color:var(--accent)">${r.pacientes}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
+
+    // ── Coluna Obs ───────────────────────────────────────────────
+    const obsCell = r.obs
+      ? `<span style="font-size:10px;color:var(--gold);line-height:1.4">${r.obs}</span>`
+      : "";
+
+    const rowCls = r.isHoje ? "row-hoje" : "";
+    html2 += `<tr class="${rowCls}">
       <td>${dtCell}</td>
       <td>${motCell}</td>
       <td>${veiCell}</td>
