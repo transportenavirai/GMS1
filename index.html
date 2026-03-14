@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GMS · Transparência de Motoristas</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0c10;--s1:#11141c;--s2:#181c28;--s3:#1e2333;--border:#252c40;--text:#dde3f0;--muted:#5a6485;--accent:#00d4ff;--gold:#ffc14d;--green:#2ecc8f;--red:#e85555;--purple:#9b7fff;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 80% 50% at 10% 0%,rgba(0,212,255,.06) 0%,transparent 60%),radial-gradient(ellipse 60% 40% at 90% 100%,rgba(255,193,77,.04) 0%,transparent 60%)}
+.page{position:relative;z-index:1;padding:20px 24px;max-width:1600px;margin:0 auto}
+/* Header */
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:14px}
+.brand-ico{background:linear-gradient(135deg,var(--accent),#0088aa);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 0 24px rgba(0,212,255,.35);flex-shrink:0}
+.brand-text h1{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;letter-spacing:3px;background:linear-gradient(90deg,var(--text),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.brand-text p{font-size:11px;color:var(--muted);margin-top:2px}
+.hdr-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.5px;display:inline-flex;align-items:center;gap:6px}
+.tag-live{background:rgba(46,204,143,.1);border:1px solid rgba(46,204,143,.3);color:var(--green)}
+.tag-off{background:rgba(255,193,77,.1);border:1px solid rgba(255,193,77,.3);color:var(--gold)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.btn{background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:20px;font-size:11px;font-family:'Barlow',sans-serif;cursor:pointer;transition:all .2s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+/* Loading */
+#loadingScreen{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s}
+#loadingScreen.hidden{opacity:0;pointer-events:none}
+.load-ico{font-size:48px;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-txt{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;letter-spacing:2px;color:var(--accent)}
+.load-sub{font-size:12px;color:var(--muted)}
+/* Erro */
+#errorScreen{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;text-align:center}
+#errorScreen h2{font-family:'Barlow Condensed',sans-serif;font-size:28px;color:var(--red)}
+#errorScreen p{color:var(--muted);font-size:13px;max-width:400px;line-height:1.6}
+/* Banner */
+#banner{display:none;align-items:center;gap:10px;background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:9px 16px;margin-bottom:14px;font-size:12px;flex-wrap:wrap}
+/* Filtros */
+.filters-wrap{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin-bottom:16px}
+.filters-title{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+.filters-grid{display:grid;grid-template-columns:auto auto auto auto 1fr;gap:18px;align-items:start}
+.filter-group label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:block;margin-bottom:5px}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;background:var(--s2);border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;font-family:'Barlow',sans-serif}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip.on{background:rgba(0,212,255,.12);border-color:var(--accent);color:var(--accent)}
+.chip.on-gold{background:rgba(255,193,77,.12);border-color:var(--gold);color:var(--gold)}
+.chip.on-purple{background:rgba(155,127,255,.12);border-color:var(--purple);color:var(--purple)}
+/* Equidade banner */
+.eq-banner{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;background:linear-gradient(135deg,rgba(0,212,255,.07),rgba(0,212,255,.02));border:1px solid rgba(0,212,255,.2);border-radius:14px;padding:16px 22px;margin-bottom:16px}
+.eq-left h2{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;letter-spacing:1px;color:var(--accent);margin-bottom:3px}
+.eq-left p{font-size:11px;color:var(--muted);line-height:1.5}
+.eq-score{font-family:'Barlow Condensed',sans-serif;font-size:56px;font-weight:900;line-height:1;color:var(--green);text-shadow:0 0 30px rgba(46,204,143,.4);text-align:center}
+.eq-score-sub{font-size:10px;color:var(--muted);margin-top:2px;text-align:center}
+/* KPIs */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-bottom:16px}
+.kpi{background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:14px 16px;position:relative;overflow:hidden;transition:border-color .2s,transform .2s}
+.kpi:hover{border-color:var(--accent);transform:translateY(-2px)}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.kpi.c0::before{background:var(--accent)}.kpi.c1::before{background:var(--green)}.kpi.c2::before{background:var(--gold)}.kpi.c3::before{background:var(--purple)}.kpi.c4::before{background:var(--red)}
+.kpi-ico{font-size:16px;margin-bottom:6px;opacity:.7}.kpi-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px}
+.kpi-val{font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:800;line-height:1;margin-bottom:2px}
+.kpi.c0 .kpi-val{color:var(--accent)}.kpi.c1 .kpi-val{color:var(--green)}.kpi.c2 .kpi-val{color:var(--gold)}.kpi.c3 .kpi-val{color:var(--purple)}.kpi.c4 .kpi-val{color:var(--red)}
+.kpi-sub{font-size:10px;color:var(--muted)}
+/* Cards */
+.row2{display:grid;grid-template-columns:1fr 300px;gap:14px;margin-bottom:14px}
+.row3{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.card{background:var(--s1);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.card-hd{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-hd h3{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px}
+.card-hd span{font-size:10px;color:var(--muted)}
+/* Tabela ranking */
+table.dt{width:100%;border-collapse:collapse}
+table.dt th{padding:8px 13px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;background:var(--s2);font-weight:600}
+table.dt td{padding:10px 13px;font-size:12px;border-bottom:1px solid rgba(37,44,64,.4)}
+table.dt tr:last-child td{border:none}
+table.dt tbody tr:hover td{background:rgba(0,212,255,.03)}
+.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:10px;flex-shrink:0}
+.drv-info{display:flex;align-items:center;gap:8px}
+.drv-name{font-weight:600;font-size:12px}.drv-sub{font-size:9px;color:var(--muted);margin-top:1px}
+.n-big{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800}
+.bar-row{display:flex;align-items:center;gap:6px;min-width:90px}
+.bar-bg{flex:1;height:4px;background:var(--s3);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.bar-pct{font-size:9px;color:var(--muted);min-width:28px;text-align:right}
+.bdg{display:inline-flex;align-items:center;padding:1px 7px;border-radius:20px;font-size:9px;font-weight:700}
+.bdg-g{background:rgba(46,204,143,.12);color:var(--green);border:1px solid rgba(46,204,143,.2)}
+.bdg-y{background:rgba(255,193,77,.12);color:var(--gold);border:1px solid rgba(255,193,77,.2)}
+.bdg-r{background:rgba(232,85,85,.12);color:var(--red);border:1px solid rgba(232,85,85,.2)}
+/* Donut */
+.donut-wrap{display:flex;flex-direction:column;align-items:center;padding:14px 12px 10px}
+.donut-rel{position:relative;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+svg.dn{transform:rotate(-90deg)}
+.dn-center{position:absolute;text-align:center;font-family:'Barlow Condensed',sans-serif}
+.dn-num{font-size:28px;font-weight:800;color:var(--text);line-height:1}.dn-lbl{font-size:9px;color:var(--muted);margin-top:1px}
+.legend{display:flex;flex-direction:column;gap:5px;width:100%}
+.leg-item{display:flex;align-items:center;justify-content:space-between}
+.leg-l{display:flex;align-items:center;gap:6px}.leg-dot{width:7px;height:7px;border-radius:2px;flex-shrink:0}
+.leg-n{font-size:10px}.leg-r{display:flex;align-items:center;gap:5px}
+.leg-pct{font-size:10px;font-weight:700}.leg-t{font-size:9px;color:var(--muted)}
+/* Equidade grid */
+.eq-sec{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.eq-sec-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.eq-sec-hd h3{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px}
+.eq-sec-hd span{font-size:10px;color:var(--muted)}
+.eq-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.eq-card{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 7px;text-align:center;transition:border-color .2s,transform .2s;cursor:default}
+.eq-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.eq-av{width:32px;height:32px;border-radius:50%;margin:0 auto 5px;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:11px}
+.eq-trips{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;line-height:1;margin-bottom:1px}
+.eq-name{font-size:9px;color:var(--muted);margin-bottom:2px}.eq-diff{font-size:9px;font-weight:700}
+.up{color:var(--green)}.dn{color:var(--red)}.eq{color:var(--muted)}
+/* Heatmap */
+.heat-wrap{padding:10px 14px;overflow-x:auto}
+.heat-hdr{display:flex;gap:3px;padding-left:80px;margin-bottom:3px}
+.heat-hdr span{width:24px;font-size:8px;color:var(--muted);text-align:center;flex-shrink:0;overflow:hidden}
+.heat-row{display:flex;align-items:center;gap:3px;margin-bottom:2px}
+.heat-lbl{font-size:9px;color:var(--muted);width:76px;flex-shrink:0;text-align:right;padding-right:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.heat-cell{width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:rgba(255,255,255,.9);cursor:default;transition:transform .15s;flex-shrink:0}
+.heat-cell:hover{transform:scale(1.4);z-index:10;position:relative}
+/* Semanal */
+.wchart-wrap{padding:10px 14px}
+.wchart-bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin-bottom:6px}
+.wchart-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
+.wchart-group{display:flex;gap:2px;align-items:flex-end;width:100%}
+.wchart-bar{flex:1;border-radius:3px 3px 0 0;min-height:2px;cursor:pointer;transition:opacity .15s}
+.wchart-bar:hover{opacity:.65}
+.wchart-lbl{font-size:8px;color:var(--muted)}
+.wchart-legend{display:flex;flex-wrap:wrap;gap:6px;padding-top:8px;border-top:1px solid var(--border)}
+.wleg{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--muted)}.wleg-dot{width:6px;height:6px;border-radius:2px}
+/* Dest/Vei */
+table.dest{width:100%;border-collapse:collapse}
+table.dest th{padding:8px 13px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;background:var(--s2)}
+table.dest td{padding:9px 13px;font-size:12px;border-bottom:1px solid rgba(37,44,64,.3)}
+table.dest tr:last-child td{border:none}
+table.dest tbody tr:hover td{background:rgba(255,193,77,.03)}
+.dest-name{font-weight:600}.dest-who{font-size:9px;color:var(--muted);margin-top:1px}
+/* Log */
+.log-wrap{max-height:280px;overflow-y:auto}
+table.log{width:100%;border-collapse:collapse}
+table.log th{padding:7px 12px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;background:var(--s2);position:sticky;top:0;z-index:1}
+table.log td{padding:8px 12px;font-size:11px;border-bottom:1px solid rgba(37,44,64,.3)}
+table.log tr:last-child td{border:none}
+table.log tbody tr:hover td{background:rgba(0,212,255,.03)}
+/* Footer/misc */
+footer{border-top:1px solid var(--border);padding:12px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-top:18px}
+footer p{font-size:10px;color:var(--muted)}
+.empty{padding:30px;text-align:center;color:var(--muted);font-size:12px}
+#tip{position:fixed;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11px;pointer-events:none;z-index:9999;display:none;box-shadow:0 8px 24px rgba(0,0,0,.6);line-height:1.6}
+
+/* ── ESCALA DO DIA ───────────────────────────────────────────────── */
+.tabs{display:flex;gap:0;margin-bottom:18px;border-bottom:2px solid var(--border)}
+.tab-btn{padding:11px 24px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;color:var(--muted);cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-panel{display:none}.tab-panel.active{display:block}
+/* Seção escala */
+.escala-header{background:linear-gradient(135deg,rgba(255,193,77,.1),rgba(255,193,77,.03));border:1px solid rgba(255,193,77,.25);border-radius:14px;padding:16px 22px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.escala-titulo{font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:900;color:var(--gold);letter-spacing:2px}
+.escala-sub{font-size:11px;color:var(--muted);margin-top:3px}
+.escala-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.escala-kpi{background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center;position:relative;overflow:hidden}
+.escala-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.escala-kpi.ck0::before{background:var(--gold)}.escala-kpi.ck1::before{background:var(--green)}.escala-kpi.ck2::before{background:var(--accent)}.escala-kpi.ck3::before{background:var(--purple)}
+.escala-kpi-val{font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:800;line-height:1;margin-bottom:2px}
+.escala-kpi.ck0 .escala-kpi-val{color:var(--gold)}.escala-kpi.ck1 .escala-kpi-val{color:var(--green)}.escala-kpi.ck2 .escala-kpi-val{color:var(--accent)}.escala-kpi.ck3 .escala-kpi-val{color:var(--purple)}
+.escala-kpi-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+/* Tabela escala */
+.escala-wrap{overflow-x:auto}
+table.escala{width:100%;border-collapse:collapse;min-width:700px}
+table.escala th{padding:9px 14px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;background:var(--s2);font-weight:600;white-space:nowrap}
+table.escala td{padding:11px 14px;font-size:12px;border-bottom:1px solid rgba(37,44,64,.4);vertical-align:middle}
+table.escala tr:last-child td{border:none}
+table.escala tbody tr:hover td{background:rgba(255,193,77,.04)}
+.escala-mot{font-weight:700;font-size:13px}
+.escala-dest{font-weight:700;font-size:13px}
+.escala-dest.ferias{color:var(--muted);font-style:italic}
+.escala-dest.disponivel{color:var(--muted);font-style:italic}
+.escala-saida{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--green)}
+.escala-pac{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:var(--accent)}
+.escala-obs{font-size:10px;color:var(--gold);line-height:1.4}
+.escala-data{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;white-space:nowrap}
+.escala-data.hoje{color:var(--green)}.escala-data.futuro{color:var(--accent)}.escala-data.passado{color:var(--muted)}
+.status-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;white-space:nowrap}
+.status-ativo{background:rgba(46,204,143,.12);color:var(--green);border:1px solid rgba(46,204,143,.2)}
+.status-ferias{background:rgba(90,100,133,.15);color:var(--muted);border:1px solid rgba(90,100,133,.2)}
+.status-disponivel{background:rgba(37,44,64,.5);color:var(--muted);border:1px solid var(--border)}
+.status-rural{background:rgba(100,130,100,.15);color:#8ab08a;border:1px solid rgba(100,130,100,.2)}
+.status-hemo{background:rgba(100,120,140,.15);color:#8aaabb;border:1px solid rgba(100,120,140,.2)}
+.placa-badge{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;color:var(--muted);background:var(--s2);border:1px solid var(--border);padding:2px 7px;border-radius:5px;white-space:nowrap}
+.escala-vazio{padding:40px;text-align:center;color:var(--muted)}
+@media(max-width:1100px){.escala-kpis{grid-template-columns:repeat(2,1fr)}}
+
+/* Responsivo */
+@media(max-width:1100px){.row2,.row3{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(3,1fr)}.eq-grid{grid-template-columns:repeat(4,1fr)}.filters-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.kpis{grid-template-columns:repeat(2,1fr)}.eq-grid{grid-template-columns:repeat(3,1fr)}.page{padding:12px}}
+</style>
+</head>
+<body>
+
+<!-- TELA DE CARREGAMENTO -->
+<div id="loadingScreen">
+  <div class="load-ico">🚛</div>
+  <div class="load-txt">CARREGANDO DADOS</div>
+  <div class="load-sub">Buscando planilha em tempo real...</div>
+</div>
+
+<!-- TELA DE ERRO -->
+<div id="errorScreen">
+  <div style="font-size:48px">⚠️</div>
+  <h2>Não foi possível carregar</h2>
+  <p id="errorMsg">Verifique se a planilha está publicada como CSV.</p>
+  <button class="btn" onclick="fetchLive()" style="margin-top:8px;font-size:13px;padding:8px 20px">⟳ Tentar novamente</button>
+</div>
+
+<!-- CONTEÚDO PRINCIPAL -->
+<div id="mainContent" style="display:none">
+<div class="page">
+
+<header>
+  <div class="brand">
+    <div class="brand-ico">🚚</div>
+    <div class="brand-text">
+      <h1>GMS · PAINEL DE TRANSPARÊNCIA</h1>
+      <p>Divisão de viagens · Sem Rural · Sem Hemodiálise · Sem Malote · Dados em tempo real</p>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <span class="tag tag-live" id="statusTag"><span class="live-dot"></span>TEMPO REAL</span>
+    <button class="btn" onclick="resetFilters()">✕ Limpar filtros</button>
+    <button class="btn" onclick="fetchLive()">⟳ Atualizar</button>
+  </div>
+</header>
+
+<div id="banner"></div>
+
+<!-- ABAS DE NAVEGAÇÃO -->
+<div class="tabs">
+  <button class="tab-btn active" id="tabEstatisticas" onclick="switchTab('estatisticas')">📊 Estatísticas</button>
+  <button class="tab-btn" id="tabEscala" onclick="switchTab('escala')">📅 Escala do Dia</button>
+</div>
+
+<!-- ── TAB ESTATÍSTICAS ─────────────────────────────────────────── -->
+<div class="tab-panel active" id="panelEstatisticas">
+<div class="filters-wrap">
+  <div class="filters-title">🔍 Filtros interativos — clique para selecionar</div>
+  <div class="filters-grid">
+    <div class="filter-group"><label>Mês</label><div class="chips" id="fMes"></div></div>
+    <div class="filter-group"><label>Semana</label><div class="chips" id="fSem"></div></div>
+    <div class="filter-group"><label>Motorista</label><div class="chips" id="fMot"></div></div>
+    <div class="filter-group"><label>Veículo</label><div class="chips" id="fVei"></div></div>
+    <div class="filter-group" style="align-self:end">
+      <label>Resultado filtrado</label>
+      <div id="fResult" style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;color:var(--accent)">-- <span style="font-size:13px;color:var(--muted);font-family:'Barlow',sans-serif;font-weight:400">viagens</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="eq-banner">
+  <div class="eq-left">
+    <h2>⚖️ ÍNDICE DE EQUIDADE</h2>
+    <p>Variação entre motoristas no período filtrado. <strong style="color:var(--gold)">Não conta: Rural, Hemodiálise, Malote, Disponível, Trânsito.</strong></p>
+  </div>
+  <div><div class="eq-score" id="eqScore">--</div><div class="eq-score-sub">/ 100</div></div>
+</div>
+
+<div class="kpis">
+  <div class="kpi c0"><div class="kpi-ico">🚛</div><div class="kpi-lbl">Total de Viagens</div><div class="kpi-val" id="kT">--</div><div class="kpi-sub" id="kP">--</div></div>
+  <div class="kpi c1"><div class="kpi-ico">👤</div><div class="kpi-lbl">Média / Motorista</div><div class="kpi-val" id="kA">--</div><div class="kpi-sub">viagens/pessoa</div></div>
+  <div class="kpi c2"><div class="kpi-ico">📍</div><div class="kpi-lbl">Destinos</div><div class="kpi-val" id="kD">--</div><div class="kpi-sub">rotas diferentes</div></div>
+  <div class="kpi c3"><div class="kpi-ico">🏆</div><div class="kpi-lbl">Mais Viagens</div><div class="kpi-val" id="kTop">--</div><div class="kpi-sub" id="kTopN">--</div></div>
+  <div class="kpi c4"><div class="kpi-ico">📊</div><div class="kpi-lbl">Variação Máxima</div><div class="kpi-val" id="kV">--</div><div class="kpi-sub">entre motoristas</div></div>
+</div>
+
+<div class="row2">
+  <div class="card">
+    <div class="card-hd"><h3>📋 RANKING POR MOTORISTA</h3><span id="tblSub">--</span></div>
+    <table class="dt"><thead><tr><th>#</th><th>Motorista</th><th>Viagens</th><th>Participação</th><th>Destino Principal</th><th>Veículo Principal</th><th>vs Média</th></tr></thead><tbody id="drvTbody"></tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-hd"><h3>🥧 DISTRIBUIÇÃO</h3><span>% por motorista</span></div>
+    <div class="donut-wrap">
+      <div class="donut-rel">
+        <svg class="dn" width="140" height="140" viewBox="0 0 140 140" id="donutSvg"></svg>
+        <div class="dn-center"><div class="dn-num" id="donutN">--</div><div class="dn-lbl">viagens</div></div>
+      </div>
+      <div class="legend" id="donutLeg"></div>
+    </div>
+  </div>
+</div>
+
+<div class="eq-sec">
+  <div class="eq-sec-hd"><h3>⚖️ EQUIDADE INDIVIDUAL</h3><span>🟢 acima · 🔴 abaixo · média = <span id="avgLbl">--</span> viagens</span></div>
+  <div class="eq-grid" id="eqGrid"></div>
+</div>
+
+<div class="row3">
+  <div class="card"><div class="card-hd"><h3>🔥 MAPA DE CALOR · MOTORISTA × DESTINO</h3><span>nº viagens</span></div><div class="heat-wrap" id="heatWrap"></div></div>
+  <div class="card"><div class="card-hd"><h3>📈 EVOLUÇÃO SEMANAL</h3><span>viagens/semana</span></div>
+    <div class="wchart-wrap"><div class="wchart-bars" id="wChart"></div><div class="wchart-legend" id="wLeg"></div></div>
+  </div>
+</div>
+
+<div class="row3">
+  <div class="card"><div class="card-hd"><h3>📍 VIAGENS POR DESTINO</h3><span id="destSub">--</span></div>
+    <table class="dest"><thead><tr><th>Destino</th><th>Total</th><th>Distribuição</th><th>Motoristas</th></tr></thead><tbody id="destTbody"></tbody></table></div>
+  <div class="card"><div class="card-hd"><h3>🚗 VIAGENS POR VEÍCULO</h3><span id="veiSub">--</span></div>
+    <table class="dest"><thead><tr><th>Veículo</th><th>Total</th><th>Distribuição</th><th>Motoristas</th></tr></thead><tbody id="veiTbody"></tbody></table></div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="card-hd"><h3>📄 LOG DE VIAGENS FILTRADAS</h3><span id="logSub">--</span></div>
+  <div class="log-wrap"><table class="log"><thead><tr><th>Data</th><th>Motorista</th><th>Destino</th><th>Veículo</th><th>Mês</th><th>Semana</th></tr></thead><tbody id="logTbody"></tbody></table></div>
+</div>
+
+</div><!-- fim panelEstatisticas -->
+
+<!-- ── TAB ESCALA DO DIA ─────────────────────────────────────────── -->
+<div class="tab-panel" id="panelEscala">
+
+  <div class="escala-header">
+    <div>
+      <div class="escala-titulo">📅 ESCALA DO DIA</div>
+      <div class="escala-sub">Viagens de hoje e próximas · atualiza com a planilha</div>
+    </div>
+    <div id="escalaBanner" style="font-size:11px;color:var(--muted)"></div>
+  </div>
+
+  <div class="escala-kpis">
+    <div class="escala-kpi ck0"><div class="escala-kpi-val" id="ekTotal">--</div><div class="escala-kpi-lbl">Viagens Hoje</div></div>
+    <div class="escala-kpi ck1"><div class="escala-kpi-val" id="ekAtivos">--</div><div class="escala-kpi-lbl">Em Serviço</div></div>
+    <div class="escala-kpi ck2"><div class="escala-kpi-val" id="ekDest">--</div><div class="escala-kpi-lbl">Destinos</div></div>
+    <div class="escala-kpi ck3"><div class="escala-kpi-val" id="ekPac">--</div><div class="escala-kpi-lbl">Pacientes</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">
+      <h3>🚗 VIAGENS DE HOJE E PRÓXIMAS</h3>
+      <span id="escalaSub">Carregando...</span>
+    </div>
+    <div class="escala-wrap">
+      <table class="escala">
+        <thead>
+          <tr>
+            <th>Placa</th>
+            <th>Motorista</th>
+            <th>Veículo</th>
+            <th>Destino</th>
+            <th>Saída</th>
+            <th>Pac.</th>
+            <th>Obs.</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="escalaTbody">
+          <tr><td colspan="8" class="escala-vazio">⏳ Carregando escala...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- fim panelEscala -->
+
+<footer>
+  <p>🔒 Painel 100% transparente · GMS · Prefeitura de Naviraí · Todos os motoristas veem os mesmos dados</p>
+  <p id="tsLbl"></p>
+</footer>
+</div>
+</div>
+<div id="tip"></div>
+
+<script>
+// ── CONFIG ───────────────────────────────────────────────────────────
+// Planilha: https://docs.google.com/spreadsheets/d/1GHrRstraI4HAaYeaDWCwgvVVpJua1iTwYFCDdLkHotU
+// Aba Registro Geral (gid=936830313) — estatísticas
+// Aba SHARE (gid=1682988408) — escala do dia
+// Planilha: https://docs.google.com/spreadsheets/d/1GHrRstraI4HAaYeaDWCwgvVVpJua1iTwYFCDdLkHotU
+// Aba: Registro Geral (gid=936830313)
+const CSV_URL    = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=936830313&single=true&output=csv";
+const SHARE_URL   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=1682988408&single=true&output=csv";
+const REFRESH_MS = 60 * 1000;
+const RETRY_MS   = 10 * 1000;
+const MAX_RETRY  = 5;
+const SKIP = new Set(["FERIAS","RECESSO","RURAL","HEMODIALISE","MALOTE","DISPONIVEL","TRANSITO","TRÂNSITO","CANCELADA"]);
+const COLORS = ["#00d4ff","#2ecc8f","#ffc14d","#9b7fff","#ff8c42","#e85555","#f06292","#4dd0e1","#a5d6a7","#ffb74d","#ce93d8","#80cbc4"];
+
+// ── ESTADO ───────────────────────────────────────────────────────────
+let ALL_ROWS = [], MOT_COLORS = {}, SHARE_ROWS = [];
+let selMes = new Set(), selSem = new Set(), selMot = new Set(), selVei = new Set();
+let retryCount = 0, cdTimer = null, nextAt = null, firstLoad = true;
+
+// ── PARSE CSV ─────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const mNames = ["","JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    // Parser de CSV que respeita aspas (campos com vírgulas internas)
+    const p = [];
+    let cur="", inQ=false;
+    for(let ci=0;ci<line.length;ci++){
+      const ch=line[ci];
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===','&&!inQ){p.push(cur.trim());cur="";}
+      else{cur+=ch;}
+    }
+    p.push(cur.trim());
+    if (p.length < 3) continue;
+    const veiculo   = (p[0]||"").toUpperCase();
+    const motorista = (p[1]||"").toUpperCase();
+    const destino   = (p[2]||"").toUpperCase();
+    if (!motorista || motorista==="MOTORISTA" || motorista.startsWith("-")) continue;
+    if (/^[0-9]{1,2}\/[0-9]{1,2}/.test(motorista)) continue; // rejeita só se começa com data dd/mm
+    if (!destino   || destino==="DESTINO"     || destino.startsWith("-"))   continue;
+    if (!veiculo   || veiculo.startsWith("-") || veiculo==="VEICULO" || veiculo==="VEICULOS / MOTORISTAS") continue;
+    let skip=false; for (const s of SKIP){if(destino.includes(s)){skip=true;break;}} if(skip) continue;
+    const data=(p[6]||"").trim(), mes=(p[8]||"").toUpperCase(), ok=(p[7]||"").trim().toUpperCase();
+    if (!data || !data.includes("/")) continue;
+    let day=1, wk="Sem 1", mesFinal=mes||"?";
+    try{ const dp=data.split("/"); day=parseInt(dp[0])||1; wk="Sem "+Math.min(5,Math.floor((day-1)/7)+1);
+      if(!mes||mes==="?"){ const mn=parseInt(dp[1])||0; if(mn>=1&&mn<=12) mesFinal=mNames[mn]; } }catch(e){}
+    out.push({v:veiculo,m:motorista,d:destino,dt:data,mes:mesFinal,day,wk,ok:ok==="OK"?"OK":""});
+  }
+  return out;
+}
+
+
+// ── PARSE CSV DA ABA SHARE ────────────────────────────────────────────
+function parseShare(text) {
+  const out = [];
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+
+  for (const line of text.split(/\r?\n/)) {
+    // Parser CSV com aspas
+    const p = [];
+    let cur="", inQ=false;
+    for(let ci=0;ci<line.length;ci++){
+      const ch=line[ci];
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===','&&!inQ){p.push(cur.trim());cur="";}
+      else{cur+=ch;}
+    }
+    p.push(cur.trim());
+
+    if (p.length < 4) continue;
+    const placa    = (p[0]||"").trim();
+    const motorista= (p[1]||"").trim().toUpperCase();
+    const veiculo  = (p[2]||"").trim();
+    const destino  = (p[3]||"").trim();
+    const saida    = (p[4]||"").trim();
+    const pacientes= (p[5]||"").trim();
+    const obs      = (p[6]||"").trim();
+    const dataBrut = (p[7]||"").trim();
+
+    // Ignora cabeçalho e linhas inválidas
+    if (!motorista || motorista === "MOTORISTA" || /^[-–—\s]*$/.test(motorista)) continue;
+    if (motorista.toUpperCase() === "PLACA") continue;
+
+    // Tenta parsear data
+    let dataObj = null, dtStr = dataBrut;
+    if (dataBrut) {
+      // Suporta DD/MM/YYYY e formatos do Sheets
+      const m = dataBrut.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+      if (m) {
+        const y = m[3].length === 2 ? 2000+parseInt(m[3]) : parseInt(m[3]);
+        dataObj = new Date(y, parseInt(m[2])-1, parseInt(m[1]));
+        dataObj.setHours(0,0,0,0);
+        dtStr = ("0"+parseInt(m[1])).slice(-2)+"/"+("0"+parseInt(m[2])).slice(-2)+"/"+y;
+      }
+    }
+
+    // Classifica status
+    const D = destino.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    const O = obs.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    let status = "ativo";
+    if (D.includes("FERIAS")||O.includes("FERIAS")||D.includes("RECESSO")) status="ferias";
+    else if (D.includes("RURAL"))                                           status="rural";
+    else if (D.includes("HEMODIALISE")||D.includes("HEMO"))                status="hemo";
+    else if (D.includes("MALOTE"))                                          status="malote";
+    else if (!destino || /^[-–—\s]*$/.test(destino) || D.includes("DISPONIVEL")) status="disponivel";
+
+    // Filtro de data: hoje e futuro
+    if (dataObj) {
+      if (dataObj < hoje) continue; // ignora passado
+    }
+
+    const isHoje = dataObj ? dataObj.getTime() === hoje.getTime() : false;
+
+    out.push({ placa, motorista, veiculo, destino, saida, pacientes, obs, dt: dtStr, dataObj, status, isHoje });
+  }
+
+  // Ordena: hoje primeiro, depois futuro; dentro de cada dia, por horário
+  out.sort((a,b) => {
+    const da = a.dataObj ? a.dataObj.getTime() : 9e15;
+    const db = b.dataObj ? b.dataObj.getTime() : 9e15;
+    if (da !== db) return da - db;
+    return (a.saida||"99:99").localeCompare(b.saida||"99:99");
+  });
+
+  return out;
+}
+
+// ── FETCH ─────────────────────────────────────────────────────────────
+async function fetchLive() {
+  const banner = document.getElementById("banner");
+  banner.style.display = "flex";
+  banner.innerHTML = `<span style="color:var(--accent)">⏳ Atualizando...</span> · Buscando planilha...`;
+  try {
+    const res = await fetch(CSV_URL+"&cachebust="+Date.now(),{cache:"no-store"});
+    if (!res.ok) throw new Error("HTTP "+res.status);
+    const parsed = parseCSV(await res.text());
+    if (parsed.length < 3) throw new Error("Dados insuficientes ("+parsed.length+" linhas) — planilha publicada?");
+    ALL_ROWS = parsed; retryCount = 0;
+    // Mantém cores existentes — só adiciona novos motoristas (evita piscar na atualização)
+    const allMots=[...new Set(ALL_ROWS.map(r=>r.m))].sort();
+    allMots.forEach((m,i)=>{ if(!MOT_COLORS[m]) MOT_COLORS[m]=COLORS[i%COLORS.length]; });
+    if (firstLoad) {
+      document.getElementById("loadingScreen").classList.add("hidden");
+      document.getElementById("mainContent").style.display="";
+      firstLoad=false;
+    }
+    buildFilters(); render();
+    // Também busca aba SHARE (escala do dia)
+    fetchShare();
+    nextAt = Date.now()+REFRESH_MS;
+    const tag=document.getElementById("statusTag");
+    tag.className="tag tag-live";
+    tag.innerHTML=`<span class="live-dot"></span>AO VIVO · ${parsed.length} viagens`;
+    banner.innerHTML=`<span style="color:var(--green)">🟢 Atualizado às ${new Date().toLocaleTimeString("pt-BR")}</span>`+
+      ` · <b style="color:var(--accent)">${parsed.length} viagens</b>`+
+      ` · próx. em <b id="cdSec">${Math.ceil(REFRESH_MS/1000)}s</b>`+
+      ` &nbsp;<button class="btn" onclick="fetchLive()" style="font-size:10px;padding:3px 10px">⟳ Agora</button>`;
+    document.getElementById("tsLbl").textContent="🔄 Dados ao vivo · atualizado às "+new Date().toLocaleTimeString("pt-BR");
+    startCountdown(); setTimeout(fetchLive,REFRESH_MS);
+  } catch(err) {
+    retryCount++;
+    if (firstLoad && ALL_ROWS.length===0) {
+      document.getElementById("loadingScreen").classList.add("hidden");
+      const es=document.getElementById("errorScreen"); es.style.display="flex";
+      document.getElementById("errorMsg").textContent=err.message;
+      setTimeout(fetchLive,RETRY_MS); return;
+    }
+    const delay=retryCount<=MAX_RETRY?RETRY_MS:REFRESH_MS; nextAt=Date.now()+delay;
+    const tag=document.getElementById("statusTag"); tag.className="tag tag-off"; tag.innerHTML="⚠️ Offline";
+    banner.innerHTML=`<span style="color:var(--gold)">⚠️ Usando dados anteriores</span>`+
+      ` · Erro: ${err.message} · retry em <b id="cdSec">${Math.ceil(delay/1000)}s</b>`+
+      ` &nbsp;<button class="btn" onclick="fetchLive()" style="font-size:10px;padding:3px 10px">⟳ Tentar</button>`;
+    document.getElementById("tsLbl").textContent="Dados anteriores · "+new Date().toLocaleTimeString("pt-BR");
+    startCountdown(); setTimeout(fetchLive,delay);
+  }
+}
+function startCountdown(){
+  if(cdTimer)clearInterval(cdTimer);
+  cdTimer=setInterval(()=>{if(!nextAt)return;const s=Math.max(0,Math.ceil((nextAt-Date.now())/1000));const el=document.getElementById("cdSec");if(el)el.textContent=s+"s";if(s===0)clearInterval(cdTimer);},500);
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&nextAt&&Date.now()>nextAt-REFRESH_MS/2)fetchLive();
+});
+
+
+// ── FETCH ABA SHARE (escala do dia) ──────────────────────────────────
+async function fetchShare() {
+  try {
+    const res = await fetch(SHARE_URL+"&cachebust="+Date.now(),{cache:"no-store"});
+    if (!res.ok) return;
+    SHARE_ROWS = parseShare(await res.text());
+    renderEscala();
+  } catch(e) {
+    console.warn("Erro ao buscar aba SHARE:", e.message);
+  }
+}
+
+// ── FILTROS ───────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+  document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+  if (tab === 'escala' && SHARE_ROWS.length === 0) fetchShare();
+}
+
+function getFiltered(){return ALL_ROWS.filter(r=>(selMes.size===0||selMes.has(r.mes))&&(selSem.size===0||selSem.has(r.wk))&&(selMot.size===0||selMot.has(r.m))&&(selVei.size===0||selVei.has(r.v)));}
+function resetFilters(){selMes=new Set();selSem=new Set();selMot=new Set();selVei=new Set();buildFilters();render();}
+function toggleFilter(set,val,el,cls){if(set.has(val)){set.delete(val);el.className="chip";}else{set.add(val);el.className="chip "+cls;}render();}
+function toggleMotFilter(m,el){if(selMot.has(m)){selMot.delete(m);el.style.cssText="";el.className="chip";}else{selMot.add(m);el.style.cssText=`border-color:${MOT_COLORS[m]};color:${MOT_COLORS[m]};background:${MOT_COLORS[m]}22`;el.className="chip on";}render();}
+function buildFilters(){
+  const meses=[...new Set(ALL_ROWS.map(r=>r.mes))].sort();
+  const sems=[...new Set(ALL_ROWS.map(r=>r.wk))].sort();
+  const mots=[...new Set(ALL_ROWS.map(r=>r.m))].sort();
+  const veis=[...new Set(ALL_ROWS.map(r=>r.v).filter(v=>v&&v!=="N/D"))].sort();
+  document.getElementById("fMes").innerHTML=meses.map(m=>`<button class="chip${selMes.has(m)?" on":""}" onclick="toggleFilter(selMes,'${m}',this,'on')">${m}</button>`).join("");
+  document.getElementById("fSem").innerHTML=sems.map(s=>`<button class="chip${selSem.has(s)?" on-gold":""}" onclick="toggleFilter(selSem,'${s}',this,'on-gold')">${s}</button>`).join("");
+  document.getElementById("fMot").innerHTML=mots.map(m=>{const sel=selMot.has(m);return`<button class="chip${sel?" on":""}" style="${sel?`border-color:${MOT_COLORS[m]};color:${MOT_COLORS[m]};background:${MOT_COLORS[m]}22`:""}" onclick="toggleMotFilter('${m}',this)">${m}</button>`;}).join("");
+  document.getElementById("fVei").innerHTML=veis.map(v=>`<button class="chip${selVei.has(v)?" on-purple":""}" onclick="toggleFilter(selVei,'${v}',this,'on-purple')">${v}</button>`).join("");
+}
+function initials(n){const p=n.split(" ");return p.length>=2?p[0][0]+p[1][0]:n.substring(0,2);}
+
+// ── RENDER ────────────────────────────────────────────────────────────
+function render(){
+  const rows=getFiltered();
+  document.getElementById("fResult").innerHTML=`<span style="font-size:26px;font-weight:800;color:var(--accent)">${rows.length}</span> <span style="font-size:13px;color:var(--muted);font-family:'Barlow',sans-serif;font-weight:400">viagens</span>`;
+  const motMap={};
+  rows.forEach(r=>{
+    if(!motMap[r.m])motMap[r.m]={name:r.m,color:MOT_COLORS[r.m]||COLORS[0],init:initials(r.m),trips:0,dests:{},veis:{},weeks:{}};
+    motMap[r.m].trips++;motMap[r.m].dests[r.d]=(motMap[r.m].dests[r.d]||0)+1;
+    motMap[r.m].veis[r.v]=(motMap[r.m].veis[r.v]||0)+1;motMap[r.m].weeks[r.wk]=(motMap[r.m].weeks[r.wk]||0)+1;
+  });
+  const list=Object.values(motMap).sort((a,b)=>b.trips-a.trips);
+  list.forEach(d=>{d.topDest=Object.entries(d.dests).sort((a,b)=>b[1]-a[1])[0]?.[0]||"";d.topVei=Object.entries(d.veis).sort((a,b)=>b[1]-a[1])[0]?.[0]||"";});
+  const total=list.reduce((s,d)=>s+d.trips,0);
+  const avg=list.length?total/list.length:0;
+  const max=list.length?Math.max(...list.map(d=>d.trips)):0;
+  const min=list.length?Math.min(...list.map(d=>d.trips)):0;
+  const equity=list.length>1?Math.max(0,Math.round(100-((max-min)/Math.max(avg,1)*40))):100;
+  const period=[...selMes].join(", ")||"Todos os meses";
+  document.getElementById("eqScore").textContent=equity;
+  document.getElementById("kT").textContent=total;document.getElementById("kP").textContent=period;
+  document.getElementById("kA").textContent=Math.round(avg);
+  document.getElementById("kD").textContent=new Set(rows.map(r=>r.d)).size;
+  document.getElementById("kTop").textContent=max||"--";document.getElementById("kTopN").textContent=list[0]?.name||"--";
+  document.getElementById("kV").textContent=max-min;document.getElementById("avgLbl").textContent=Math.round(avg);
+  document.getElementById("tblSub").textContent=`${list.length} motoristas · ${period}`;
+  document.getElementById("destSub").textContent=`${new Set(rows.map(r=>r.d)).size} destinos`;
+  document.getElementById("veiSub").textContent=`${new Set(rows.map(r=>r.v).filter(v=>v&&v!=="N/D")).size} veículos`;
+  document.getElementById("donutN").textContent=total;
+  if(!list.length){const e='<tr><td colspan="10" class="empty">Nenhuma viagem encontrada.</td></tr>';["drvTbody","destTbody","veiTbody","logTbody"].forEach(id=>document.getElementById(id).innerHTML=e);document.getElementById("eqGrid").innerHTML='<div class="empty">Sem dados.</div>';document.getElementById("heatWrap").innerHTML='<div class="empty">Sem dados.</div>';document.getElementById("wChart").innerHTML="";return;}
+  // Ranking
+  document.getElementById("drvTbody").innerHTML=list.map((d,i)=>{
+    const diff=Math.round(d.trips-avg);
+    const bdg=diff>3?`<span class="bdg bdg-g">+${diff}</span>`:diff<-3?`<span class="bdg bdg-r">${diff}</span>`:`<span class="bdg bdg-y">≈ média</span>`;
+    return`<tr><td style="color:var(--muted);font-weight:700;font-size:10px">${i+1}º</td><td><div class="drv-info"><div class="av" style="background:${d.color}22;color:${d.color};border:1.5px solid ${d.color}55">${d.init}</div><div><div class="drv-name">${d.name}</div><div class="drv-sub">${d.topDest}</div></div></div></td><td><span class="n-big" style="color:${d.color}">${d.trips}</span></td><td><div class="bar-row"><div class="bar-bg"><div class="bar-fill" style="width:${(d.trips/max*100).toFixed(1)}%;background:${d.color}"></div></div><span class="bar-pct">${(d.trips/total*100).toFixed(1)}%</span></div></td><td style="font-size:10px;color:var(--muted)">${d.topDest||"-"}</td><td style="font-size:10px;color:var(--muted)">${d.topVei||"-"}</td><td>${bdg}</td></tr>`;
+  }).join("");
+  // Donut
+  const svg=document.getElementById("donutSvg");const cx=70,cy=70,r=58,sw=15,circ=2*Math.PI*r;svg.innerHTML="";
+  const bg=document.createElementNS("http://www.w3.org/2000/svg","circle");bg.setAttribute("cx",cx);bg.setAttribute("cy",cy);bg.setAttribute("r",r);bg.setAttribute("fill","none");bg.setAttribute("stroke","#1e2333");bg.setAttribute("stroke-width",sw);svg.appendChild(bg);
+  let off=0;list.forEach(d=>{const pct=d.trips/total,dash=pct*circ;const c=document.createElementNS("http://www.w3.org/2000/svg","circle");c.setAttribute("cx",cx);c.setAttribute("cy",cy);c.setAttribute("r",r);c.setAttribute("fill","none");c.setAttribute("stroke",d.color);c.setAttribute("stroke-width",sw);c.setAttribute("stroke-dasharray",`${Math.max(0,dash-1)} ${circ-Math.max(0,dash-1)}`);c.setAttribute("stroke-dashoffset",-off*circ);svg.appendChild(c);off+=pct;});
+  document.getElementById("donutLeg").innerHTML=list.slice(0,8).map(d=>`<div class="leg-item"><div class="leg-l"><div class="leg-dot" style="background:${d.color}"></div><span class="leg-n">${d.name.split(" ")[0]}</span></div><div class="leg-r"><span class="leg-pct" style="color:${d.color}">${(d.trips/total*100).toFixed(1)}%</span><span class="leg-t">${d.trips}v</span></div></div>`).join("");
+  // Equidade
+  document.getElementById("eqGrid").innerHTML=list.map(d=>{const diff=Math.round(d.trips-avg);const cls=diff>3?"up":diff<-3?"dn":"eq";return`<div class="eq-card"><div class="eq-av" style="background:${d.color}22;color:${d.color};border:1.5px solid ${d.color}55">${d.init}</div><div class="eq-trips" style="color:${d.color}">${d.trips}</div><div class="eq-name">${d.name.split(" ")[0]}</div><div class="eq-diff ${cls}">${diff>0?"+":""}${diff} vs média</div></div>`;}).join("");
+  // Heatmap
+  const dc={};rows.forEach(r=>dc[r.d]=(dc[r.d]||0)+1);
+  const topD=Object.entries(dc).sort((a,b)=>b[1]-a[1]).slice(0,10).map(e=>e[0]);
+  const maxV=Math.max(...list.flatMap(d=>topD.map(dest=>d.dests[dest]||0)),1);
+  let hh=`<div class="heat-hdr">${topD.map(d=>`<span title="${d}">${d.substring(0,5)}</span>`).join("")}</div>`;
+  list.forEach(d=>{hh+=`<div class="heat-row"><div class="heat-lbl">${d.name.split(" ")[0]}</div>`;topD.forEach(dest=>{const v=d.dests[dest]||0;const alpha=v>0?Math.min(1,.2+v/maxV*.8):.06;const bg2=v>0?`background:${d.color};opacity:${alpha}`:"background:var(--s2);opacity:.4";hh+=`<div class="heat-cell" style="${bg2}" onmouseenter="showTip(event,'<b>${d.name}</b> → ${dest}<br>${v} viagens')" onmouseleave="hideTip()" onmousemove="moveTip(event)">${v||""}</div>`;});hh+="</div>";});
+  document.getElementById("heatWrap").innerHTML=hh;
+  // Semanal
+  const weeks=[...new Set(rows.map(r=>r.wk))].sort();
+  const maxW=Math.max(...list.flatMap(d=>weeks.map(w=>d.weeks[w]||0)),1);
+  document.getElementById("wChart").innerHTML=weeks.map(w=>{const bars=list.map(d=>{const v=d.weeks[w]||0;return`<div class="wchart-bar" style="background:${d.color};height:${v?(v/maxW*110).toFixed(1):2}px;opacity:${v?1:.15}" onmouseenter="showTip(event,'<b>${d.name}</b><br>${w}: <b>${v}</b> viagens')" onmouseleave="hideTip()" onmousemove="moveTip(event)"></div>`;}).join("");return`<div class="wchart-col"><div class="wchart-group">${bars}</div><div class="wchart-lbl">${w}</div></div>`;}).join("");
+  document.getElementById("wLeg").innerHTML=list.map(d=>`<div class="wleg"><div class="wleg-dot" style="background:${d.color}"></div>${d.name.split(" ")[0]}</div>`).join("");
+  // Destinos
+  const dmap={},dmot={};rows.forEach(r=>{dmap[r.d]=(dmap[r.d]||0)+1;if(!dmot[r.d])dmot[r.d]=new Set();dmot[r.d].add(r.m.split(" ")[0]);});
+  const dsorted=Object.entries(dmap).sort((a,b)=>b[1]-a[1]);const dmaxT=dsorted[0]?.[1]||1;const dtot=dsorted.reduce((s,e)=>s+e[1],0);
+  document.getElementById("destTbody").innerHTML=dsorted.map(([d,t])=>`<tr><td><div class="dest-name">📍 ${d}</div><div class="dest-who">${[...dmot[d]].join(", ")}</div></td><td style="font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;color:var(--gold)">${t}</td><td><div class="bar-row"><div class="bar-bg"><div class="bar-fill" style="width:${(t/dmaxT*100).toFixed(1)}%;background:var(--gold)"></div></div><span class="bar-pct">${(t/dtot*100).toFixed(1)}%</span></div></td><td style="font-size:9px;color:var(--muted)">${[...dmot[d]].slice(0,4).join(", ")}</td></tr>`).join("");
+  // Veículos
+  const vc={},vm={};rows.filter(r=>r.v&&r.v!=="N/D").forEach(r=>{vc[r.v]=(vc[r.v]||0)+1;if(!vm[r.v])vm[r.v]=new Set();vm[r.v].add(r.m.split(" ")[0]);});
+  const vsorted=Object.entries(vc).sort((a,b)=>b[1]-a[1]);const vmaxT=vsorted[0]?.[1]||1;const vtot=vsorted.reduce((s,e)=>s+e[1],0);
+  document.getElementById("veiTbody").innerHTML=vsorted.map(([v,t])=>`<tr><td><div class="dest-name">🚗 ${v}</div><div class="dest-who">${[...vm[v]].join(", ")}</div></td><td style="font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;color:var(--purple)">${t}</td><td><div class="bar-row"><div class="bar-bg"><div class="bar-fill" style="width:${(t/vmaxT*100).toFixed(1)}%;background:var(--purple)"></div></div><span class="bar-pct">${(t/vtot*100).toFixed(1)}%</span></div></td><td style="font-size:9px;color:var(--muted)">${[...vm[v]].slice(0,3).join(", ")}</td></tr>`).join("");
+  // Log
+  const lsorted=[...rows].sort((a,b)=>b.dt.split("/").reverse().join("").localeCompare(a.dt.split("/").reverse().join("")));
+  document.getElementById("logSub").textContent=`${lsorted.length} viagens`;
+  document.getElementById("logTbody").innerHTML=lsorted.slice(0,300).map(r=>`<tr><td style="color:var(--muted)">${r.dt}</td><td><span style="color:${MOT_COLORS[r.m]||'#fff'};font-weight:600">${r.m}</span></td><td>📍 ${r.d}</td><td style="color:var(--muted);font-size:10px">${r.v}</td><td><span style="background:rgba(0,212,255,.1);color:var(--accent);border:1px solid rgba(0,212,255,.2);padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700">${r.mes}</span></td><td style="color:var(--muted);font-size:10px">${r.wk}</td></tr>`).join("");
+}
+
+
+// ── RENDER ESCALA DO DIA ──────────────────────────────────────────────
+function renderEscala() {
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const rows = SHARE_ROWS;
+
+  // KPIs
+  const deHoje   = rows.filter(r => r.isHoje);
+  const ativos   = deHoje.filter(r => r.status === "ativo");
+  const totalPac = deHoje.reduce((s,r) => s+(parseInt(r.pacientes)||0), 0);
+  const destinos = new Set(ativos.map(r => r.destino)).size;
+
+  document.getElementById("ekTotal").textContent  = deHoje.length;
+  document.getElementById("ekAtivos").textContent = ativos.length;
+  document.getElementById("ekDest").textContent   = destinos;
+  document.getElementById("ekPac").textContent    = totalPac || "-";
+
+  if (!rows.length) {
+    document.getElementById("escalaTbody").innerHTML =
+      '<tr><td colspan="8" class="escala-vazio">📭 Nenhuma viagem encontrada na aba SHARE</td></tr>';
+    return;
+  }
+
+  const statusLabel = {
+    ativo:      '<span class="status-badge status-ativo">🚗 Em viagem</span>',
+    ferias:     '<span class="status-badge status-ferias">🏖️ Férias/Folga</span>',
+    disponivel: '<span class="status-badge status-disponivel">⬜ Disponível</span>',
+    rural:      '<span class="status-badge status-rural">🌾 Rural</span>',
+    hemo:       '<span class="status-badge status-hemo">🏥 Hemodiálise</span>',
+    malote:     '<span class="status-badge status-disponivel">📦 Malote</span>',
+  };
+
+  let lastDate = "";
+  let html2 = "";
+  rows.forEach(r => {
+    // Separador de data
+    if (r.dt !== lastDate) {
+      const isH = r.isHoje;
+      const dtLabel = isH
+        ? `<b style="color:var(--green)">📅 HOJE · ${r.dt}</b>`
+        : `<span style="color:var(--accent)">📆 ${r.dt}</span>`;
+      html2 += `<tr><td colspan="8" style="background:var(--s3);padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted)">${dtLabel}</td></tr>`;
+      lastDate = r.dt;
+    }
+
+    const destCls = r.status==="ferias"||r.status==="disponivel" ? ` class="escala-dest ${r.status}"` : ' class="escala-dest"';
+    const dataCls = r.isHoje ? "escala-data hoje" : "escala-data futuro";
+
+    html2 += `<tr>
+      <td><span class="placa-badge">${r.placa||"-"}</span></td>
+      <td><div class="escala-mot" style="color:${MOT_COLORS[r.motorista]||'var(--text)'}">${r.motorista}</div></td>
+      <td style="font-size:10px;color:var(--muted)">${r.veiculo||"-"}</td>
+      <td><div${destCls}>${r.destino||"-"}</div></td>
+      <td><span class="escala-saida">${r.saida||"—"}</span></td>
+      <td><span class="escala-pac">${r.pacientes||"—"}</span></td>
+      <td><span class="escala-obs">${r.obs||""}</span></td>
+      <td>${statusLabel[r.status]||statusLabel.ativo}</td>
+    </tr>`;
+  });
+
+  document.getElementById("escalaTbody").innerHTML = html2;
+  document.getElementById("escalaSub").textContent = rows.length+" viagens · hoje e futuras";
+}
+
+// ── TOOLTIP ───────────────────────────────────────────────────────────
+const tip=document.getElementById("tip");
+function showTip(e,h){tip.innerHTML=h;tip.style.display="block";moveTip(e);}
+function moveTip(e){tip.style.left=(e.clientX+14)+"px";tip.style.top=(e.clientY-10)+"px";}
+function hideTip(){tip.style.display="none";}
+
+// ── INIT ──────────────────────────────────────────────────────────────
+fetchLive();
+</script>
+</body>
+</html>
