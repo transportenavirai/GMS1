@@ -378,16 +378,17 @@ const SKIP = new Set(["FERIAS","RECESSO","RURAL","HEMODIALISE","MALOTE","DISPONI
 const COLORS = ["#00d4ff","#2ecc8f","#ffc14d","#9b7fff","#ff8c42","#e85555","#f06292","#4dd0e1","#a5d6a7","#ffb74d","#ce93d8","#80cbc4"];
 
 // ── ESTADO ───────────────────────────────────────────────────────────
-let ALL_ROWS = [], MOT_COLORS = {};
+let ALL_ROWS = [], ESCALA_ROWS = [], MOT_COLORS = {};
 let selMes = new Set(), selSem = new Set(), selMot = new Set(), selVei = new Set();
 let retryCount = 0, cdTimer = null, nextAt = null, firstLoad = true;
 
 // ── PARSE CSV ─────────────────────────────────────────────────────────
 function parseCSV(text) {
   const mNames = ["","JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
-  const out = [];
+  const stats = [];   // para estatísticas (exclui RURAL/HEMO/etc, exclui OK)
+  const escala = [];  // para escala do dia (inclui tudo, só exclui viagens OK)
+
   for (const line of text.split(/\r?\n/)) {
-    // Parser de CSV que respeita aspas (campos com vírgulas internas)
     const p = [];
     let cur="", inQ=false;
     for(let ci=0;ci<line.length;ci++){
@@ -398,22 +399,41 @@ function parseCSV(text) {
     }
     p.push(cur.trim());
     if (p.length < 3) continue;
+
     const veiculo   = (p[0]||"").toUpperCase();
     const motorista = (p[1]||"").toUpperCase();
     const destino   = (p[2]||"").toUpperCase();
+
+    // Filtros comuns (inválidos)
     if (!motorista || motorista==="MOTORISTA" || motorista.startsWith("-")) continue;
-    if (/^[0-9]{1,2}\/[0-9]{1,2}/.test(motorista)) continue; // rejeita só se começa com data dd/mm
-    if (!destino   || destino==="DESTINO"     || destino.startsWith("-"))   continue;
+    if (/^[0-9]{1,2}\/[0-9]{1,2}/.test(motorista)) continue;
+    if (!destino   || destino==="DESTINO" || destino.startsWith("-")) continue;
     if (!veiculo   || veiculo.startsWith("-") || veiculo==="VEICULO" || veiculo==="VEICULOS / MOTORISTAS") continue;
-    let skip=false; for (const s of SKIP){if(destino.includes(s)){skip=true;break;}} if(skip) continue;
-    const saida=(p[3]||"").trim(), pac=(p[4]||"").trim(), obs=(p[5]||"").trim(), data=(p[6]||"").trim(), ok=(p[7]||"").trim().toUpperCase(), mes=(p[8]||"").toUpperCase();
+
+    const saida=(p[3]||"").trim(), pac=(p[4]||"").trim(), obs=(p[5]||"").trim();
+    const data=(p[6]||"").trim(), ok=(p[7]||"").trim().toUpperCase(), mes=(p[8]||"").toUpperCase();
     if (!data || !data.includes("/")) continue;
+
     let day=1, wk="Sem 1", mesFinal=mes||"?";
-    try{ const dp=data.split("/"); day=parseInt(dp[0])||1; wk="Sem "+Math.min(5,Math.floor((day-1)/7)+1);
-      if(!mes||mes==="?"){ const mn=parseInt(dp[1])||0; if(mn>=1&&mn<=12) mesFinal=mNames[mn]; } }catch(e){}
-    out.push({v:veiculo,m:motorista,d:destino,dt:data,mes:mesFinal,day,wk,ok:ok==="OK"?"OK":"",saida:saida,pac:pac,obs:obs});
+    try{
+      const dp=data.split("/"); day=parseInt(dp[0])||1;
+      wk="Sem "+Math.min(5,Math.floor((day-1)/7)+1);
+      if(!mes||mes==="?"){ const mn=parseInt(dp[1])||0; if(mn>=1&&mn<=12) mesFinal=mNames[mn]; }
+    }catch(e){}
+
+    const row = {v:veiculo,m:motorista,d:destino,dt:data,mes:mesFinal,day,wk,
+                 ok:ok==="OK"?"OK":"",saida:saida,pac:pac,obs:obs};
+
+    // Escala do dia: inclui tudo EXCETO viagens já confirmadas (ok=OK)
+    if (ok !== "OK") escala.push(row);
+
+    // Estatísticas: exclui categorias especiais e viagens OK
+    let skip=false;
+    for (const s of SKIP){if(destino.includes(s)){skip=true;break;}}
+    if (!skip && ok !== "OK") stats.push(row);
   }
-  return out;
+
+  return {stats, escala};
 }
 
 
@@ -428,10 +448,12 @@ async function fetchLive() {
     const res = await fetch(CSV_URL+"&cachebust="+Date.now(),{cache:"no-store"});
     if (!res.ok) throw new Error("HTTP "+res.status);
     const parsed = parseCSV(await res.text());
-    if (parsed.length < 3) throw new Error("Dados insuficientes ("+parsed.length+" linhas) — planilha publicada?");
-    ALL_ROWS = parsed; retryCount = 0;
+    if (parsed.stats.length < 3 && parsed.escala.length < 3) throw new Error("Dados insuficientes — planilha publicada?");
+    ALL_ROWS = parsed.stats;
+    ESCALA_ROWS = parsed.escala;
+    retryCount = 0;
     // Mantém cores existentes — só adiciona novos motoristas (evita piscar na atualização)
-    const allMots=[...new Set(ALL_ROWS.map(r=>r.m))].sort();
+    const allMots=[...new Set([...ALL_ROWS,...ESCALA_ROWS].map(r=>r.m))].sort();
     allMots.forEach((m,i)=>{ if(!MOT_COLORS[m]) MOT_COLORS[m]=COLORS[i%COLORS.length]; });
     if (firstLoad) {
       document.getElementById("loadingScreen").classList.add("hidden");
@@ -585,8 +607,14 @@ function renderEscala() {
   const hojeStr = hd+"/"+hm+"/"+hy;
 
   // Filtra viagens de hoje (todos os status, incluindo Rural/Hemo/Malote para mostrar tudo)
-  const rows = ALL_ROWS.filter(function(r) {
-    return r.dt && r.dt.startsWith(hd+"/"+hm) && r.ok !== "OK";
+  // Mostra hoje e futuras — a partir de hoje inclusive
+  const rows = ESCALA_ROWS.filter(function(r) {
+    if (!r.dt || !r.dt.includes("/")) return false;
+    const dp = r.dt.split("/");
+    if (dp.length < 3) return false;
+    const rDate = new Date(parseInt(dp[2]), parseInt(dp[1])-1, parseInt(dp[0]));
+    rDate.setHours(0,0,0,0);
+    return rDate >= hoje;
   });
 
   // KPIs — conta só viagens reais (exclui Rural, Hemo, Malote, Disponivel)
@@ -602,24 +630,42 @@ function renderEscala() {
   document.getElementById("ekAtivos").textContent = ativas.length || "--";
   document.getElementById("ekDest").textContent   = destinos      || "--";
   document.getElementById("ekPac").textContent    = totalPac      || "--";
-  document.getElementById("escalaCount").textContent = rows.length + " viagem" + (rows.length!==1?"s":"") + " · " + hojeStr;
+  document.getElementById("escalaCount").textContent = rows.length + " viagem" + (rows.length!==1?"s":"") + " · a partir de " + hojeStr;
   document.getElementById("escalaInfo").textContent  = "Atualizado às " + new Date().toLocaleTimeString("pt-BR");
 
   const tbody = document.getElementById("escalaTbody");
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">📭 Nenhuma viagem registrada para hoje · ' + hojeStr + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">📭 Nenhuma viagem pendente a partir de ' + hojeStr + '</td></tr>';
     return;
   }
 
-  // Ordena por horário de saída
+  // Ordena por data → horário de saída
   const sorted = rows.slice().sort(function(a,b){
-    return (a.saida||a.s||"99:99").localeCompare(b.saida||b.s||"99:99");
+    const da = a.dt.split("/").reverse().join(""), db = b.dt.split("/").reverse().join("");
+    if (da !== db) return da.localeCompare(db);
+    return (a.saida||a.pac||"99:99").localeCompare(b.saida||b.pac||"99:99");
   });
 
+  const diasSemana = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   let html2 = "";
+  let lastDt = "";
 
   sorted.forEach(function(r) {
+    // Separador de data
+    if (r.dt !== lastDt) {
+      lastDt = r.dt;
+      const dp = r.dt.split("/");
+      const rDate = new Date(parseInt(dp[2]), parseInt(dp[1])-1, parseInt(dp[0]));
+      const isHoje = rDate.getTime() === hoje.getTime();
+      const diasFuturos = Math.round((rDate - hoje) / 864e5);
+      const sufixo = isHoje ? "<span style='color:var(--green);font-weight:800'>● HOJE</span>" :
+                     diasFuturos === 1 ? "<span style='color:var(--muted)'>· amanhã</span>" :
+                     "<span style='color:var(--muted)'>· em "+diasFuturos+" dias</span>";
+      const corData = isHoje ? "var(--green)" : "var(--accent)";
+      html2 += "<tr class='row-sep'><td colspan='7'><span style='color:"+corData+";font-weight:700'>"+
+               diasSemana[rDate.getDay()]+" · "+r.dt+"</span> "+sufixo+"</td></tr>";
+    }
     const cor  = MOT_COLORS[r.m] || "#aaa";
     const pts  = r.m.split(" ");
     const ini  = pts.length>=2 ? pts[0][0]+pts[1][0] : r.m.substring(0,2);
