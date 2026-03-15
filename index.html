@@ -190,6 +190,7 @@ footer p{font-size:10px;color:var(--muted)}
 .dest-disp{color:var(--muted);font-style:italic}
 .vei-badge{font-size:10px;font-weight:700;color:var(--muted);background:var(--s2);border:1px solid var(--border);padding:2px 7px;border-radius:4px;white-space:nowrap}
 .obs-val{font-size:10px;color:var(--gold)}
+.escala-data{color:var(--green);font-weight:700;font-size:11px}
 @media(max-width:1100px){.escala-kpis{grid-template-columns:repeat(2,1fr)}}
 
 /* Responsivo */
@@ -368,19 +369,29 @@ footer p{font-size:10px;color:var(--muted)}
 <script>
 // ── CONFIG ───────────────────────────────────────────────────────────
 // Planilha: https://docs.google.com/spreadsheets/d/1GHrRstraI4HAaYeaDWCwgvVVpJua1iTwYFCDdLkHotU
-// Aba Registro Geral (gid=936830313) — estatísticas
-// Aba SHARE (gid=1682988408) — escala do dia
+// Aba Registro Geral (gid=936830313) — estatísticas + escala do dia
 const CSV_URL    = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=936830313&single=true&output=csv";
 const REFRESH_MS = 60 * 1000;
 const RETRY_MS   = 10 * 1000;
 const MAX_RETRY  = 5;
-const SKIP = new Set(["FERIAS","RECESSO","RURAL","HEMODIALISE","MALOTE","DISPONIVEL","TRANSITO","TRÂNSITO","CANCELADA"]);
+const SKIP     = new Set(["FERIAS","RECESSO","RURAL","HEMODIALISE","MALOTE","DISPONIVEL","TRANSITO","TRÂNSITO","CANCELADA"]);
+const SKIP_KPI = new Set(["RURAL","HEMODIALISE","MALOTE","DISPONIVEL","TRANSITO","TRÂNSITO"]); // para KPIs da Escala
 const COLORS = ["#00d4ff","#2ecc8f","#ffc14d","#9b7fff","#ff8c42","#e85555","#f06292","#4dd0e1","#a5d6a7","#ffb74d","#ce93d8","#80cbc4"];
 
 // ── ESTADO ───────────────────────────────────────────────────────────
 let ALL_ROWS = [], ESCALA_ROWS = [], MOT_COLORS = {};
 let selMes = new Set(), selSem = new Set(), selMot = new Set(), selVei = new Set();
 let retryCount = 0, cdTimer = null, nextAt = null, firstLoad = true;
+
+// ── SEGURANÇA — escapa HTML para evitar XSS ─────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
 
 // ── PARSE CSV ─────────────────────────────────────────────────────────
 function parseCSV(text) {
@@ -437,8 +448,6 @@ function parseCSV(text) {
 }
 
 
-
-
 // ── FETCH ─────────────────────────────────────────────────────────────
 async function fetchLive() {
   const banner = document.getElementById("banner");
@@ -464,9 +473,9 @@ async function fetchLive() {
     nextAt = Date.now()+REFRESH_MS;
     const tag=document.getElementById("statusTag");
     tag.className="tag tag-live";
-    tag.innerHTML=`<span class="live-dot"></span>AO VIVO · ${parsed.length} viagens`;
+    tag.innerHTML=`<span class="live-dot"></span>AO VIVO · ${parsed.stats.length} viagens`;
     banner.innerHTML=`<span style="color:var(--green)">🟢 Atualizado às ${new Date().toLocaleTimeString("pt-BR")}</span>`+
-      ` · <b style="color:var(--accent)">${parsed.length} viagens</b>`+
+      ` · <b style="color:var(--accent)">${parsed.stats.length} viagens</b>`+
       ` · próx. em <b id="cdSec">${Math.ceil(REFRESH_MS/1000)}s</b>`+
       ` &nbsp;<button class="btn" onclick="fetchLive()" style="font-size:10px;padding:3px 10px">⟳ Agora</button>`;
     document.getElementById("tsLbl").textContent="🔄 Dados ao vivo · atualizado às "+new Date().toLocaleTimeString("pt-BR");
@@ -493,10 +502,12 @@ function startCountdown(){
   cdTimer=setInterval(()=>{if(!nextAt)return;const s=Math.max(0,Math.ceil((nextAt-Date.now())/1000));const el=document.getElementById("cdSec");if(el)el.textContent=s+"s";if(s===0)clearInterval(cdTimer);},500);
 }
 document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState==="visible"&&nextAt&&Date.now()>nextAt-REFRESH_MS/2)fetchLive();
+  if(document.visibilityState==="hidden"){
+    if(cdTimer) clearInterval(cdTimer); // pausa countdown em segundo plano
+  } else if(nextAt && Date.now() > nextAt - REFRESH_MS/2) {
+    fetchLive(); // re-fetcha se estava atrasado
+  }
 });
-
-
 
 
 // ── FILTROS ───────────────────────────────────────────────────────────
@@ -551,7 +562,16 @@ function render(){
   document.getElementById("destSub").textContent=`${new Set(rows.map(r=>r.d)).size} destinos`;
   document.getElementById("veiSub").textContent=`${new Set(rows.map(r=>r.v).filter(v=>v&&v!=="N/D")).size} veículos`;
   document.getElementById("donutN").textContent=total;
-  if(!list.length){const e='<tr><td colspan="10" class="empty">Nenhuma viagem encontrada.</td></tr>';["drvTbody","destTbody","veiTbody","logTbody"].forEach(id=>document.getElementById(id).innerHTML=e);document.getElementById("eqGrid").innerHTML='<div class="empty">Sem dados.</div>';document.getElementById("heatWrap").innerHTML='<div class="empty">Sem dados.</div>';document.getElementById("wChart").innerHTML="";return;}
+  if (!list.length) {
+    const e = '<tr><td colspan="10" class="empty">Nenhuma viagem encontrada.</td></tr>';
+    ["drvTbody","destTbody","veiTbody","logTbody"].forEach(id =>
+      document.getElementById(id).innerHTML = e
+    );
+    document.getElementById("eqGrid").innerHTML   = '<div class="empty">Sem dados.</div>';
+    document.getElementById("heatWrap").innerHTML = '<div class="empty">Sem dados.</div>';
+    document.getElementById("wChart").innerHTML   = "";
+    return;
+  }
   // Ranking
   document.getElementById("drvTbody").innerHTML=list.map((d,i)=>{
     const diff=Math.round(d.trips-avg);
@@ -596,8 +616,8 @@ function render(){
 
 // ── RENDER ESCALA DO DIA ──────────────────────────────────────────────
 function renderEscala() {
-  // Usa ALL_ROWS (Registro Geral) — filtra pelo dia de hoje
-  // Estrutura: {v, m, d, dt, mes, wk, ok, saida, pacientes, obs}
+  // Usa ESCALA_ROWS — viagens pendentes a partir de hoje
+  // Estrutura: {v, m, d, dt, mes, wk, ok, saida, pac, obs}
   const hoje = new Date(); hoje.setHours(0,0,0,0);
 
   // Formata hoje como DD/MM/YYYY para comparar com r.dt
@@ -606,8 +626,7 @@ function renderEscala() {
   const hy = hoje.getFullYear();
   const hojeStr = hd+"/"+hm+"/"+hy;
 
-  // Filtra viagens de hoje (todos os status, incluindo Rural/Hemo/Malote para mostrar tudo)
-  // Mostra hoje e futuras — a partir de hoje inclusive
+  // Filtra viagens a partir de hoje inclusive (sem OK — já excluído no parseCSV)
   const rows = ESCALA_ROWS.filter(function(r) {
     if (!r.dt || !r.dt.includes("/")) return false;
     const dp = r.dt.split("/");
@@ -618,12 +637,11 @@ function renderEscala() {
   });
 
   // KPIs — conta só viagens reais (exclui Rural, Hemo, Malote, Disponivel)
-  const SKIP_KPI = new Set(["RURAL","HEMODIALISE","MALOTE","DISPONIVEL","TRANSITO","TRÂNSITO"]);
   const ativas   = rows.filter(function(r) {
     const du = r.d.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-    return !Array.from(SKIP_KPI).some(function(s){ return du.includes(s); });
+    for (const s of SKIP_KPI) { if (du.includes(s)) return false; } return true;
   });
-  const totalPac = ativas.reduce(function(s,r){ return s+(parseInt(r.pacientes||r.pac)||0); }, 0);
+  const totalPac = ativas.reduce(function(s,r){ return s+(parseInt(r.pac)||0); }, 0);
   const destinos = new Set(ativas.map(function(r){ return r.d; })).size;
 
   document.getElementById("ekTotal").textContent  = rows.length   || "--";
@@ -644,7 +662,7 @@ function renderEscala() {
   const sorted = rows.slice().sort(function(a,b){
     const da = a.dt.split("/").reverse().join(""), db = b.dt.split("/").reverse().join("");
     if (da !== db) return da.localeCompare(db);
-    return (a.saida||a.pac||"99:99").localeCompare(b.saida||b.pac||"99:99");
+    return (a.saida||"99:99").localeCompare(b.saida||"99:99");
   });
 
   const diasSemana = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
@@ -671,45 +689,43 @@ function renderEscala() {
     const ini  = pts.length>=2 ? pts[0][0]+pts[1][0] : r.m.substring(0,2);
 
     // Veículo
-    const vei = r.v || r.veiculo || "";
+    const vei = r.v || "";
     const veiCell = vei
-      ? '<span style="font-size:10px;font-weight:700;color:var(--muted);background:var(--s2);border:1px solid var(--border);padding:2px 7px;border-radius:4px;white-space:nowrap">'+vei+'</span>'
+      ? '<span class="vei-badge">'+vei+'</span>'
       : '<span style="color:var(--muted)">—</span>';
 
     // Destino
     const dest = r.d || "";
     const DU   = dest.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     let destCell = "";
-    if      (DU.includes("FERIAS")||DU.includes("RECESSO"))   destCell='<span style="color:var(--muted);font-style:italic">🏖️ '+dest+'</span>';
-    else if (DU.includes("RURAL"))                             destCell='<span style="color:#8ab08a">🌾 '+dest+'</span>';
-    else if (DU.includes("HEMODIALISE")||DU.includes("HEMO")) destCell='<span style="color:#8aaabb">🏥 '+dest+'</span>';
-    else if (DU.includes("MALOTE"))                            destCell='<span style="color:var(--muted)">📦 '+dest+'</span>';
-    else if (DU.includes("DISPONIVEL"))                        destCell='<span style="color:var(--muted);font-style:italic">⬜ DISPONIVEL</span>';
-    else                                                       destCell='<b style="color:var(--text)">'+dest+'</b>';
+    if      (DU.includes("FERIAS")||DU.includes("RECESSO"))   destCell='<span class="dest-ferias">🏖️ '+esc(dest)+'</span>';
+    else if (DU.includes("RURAL"))                             destCell='<span class="dest-rural">🌾 '+esc(dest)+'</span>';
+    else if (DU.includes("HEMODIALISE")||DU.includes("HEMO")) destCell='<span class="dest-hemo">🏥 '+esc(dest)+'</span>';
+    else if (DU.includes("MALOTE"))                            destCell='<span class="dest-malote">📦 '+esc(dest)+'</span>';
+    else if (DU.includes("DISPONIVEL"))                        destCell='<span class="dest-disp">⬜ DISPONIVEL</span>';
+    else                                                       destCell='<b class="dest-val">'+esc(dest)+'</b>';
 
     // Saída
-    const saida = r.saida || r.s || "";
+    const saida = r.saida || "";
     const saidaCell = saida
-      ? '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:18px;font-weight:800;color:var(--green)">'+saida+'</span>'
+      ? '<span class="saida-val">'+esc(saida)+'</span>'
       : '<span style="color:var(--muted)">—</span>';
 
     // Pacientes
-    const pac = r.pacientes || r.pac || "";
+    const pac = r.pac || "";
     const pacCell = pac
-      ? '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:16px;font-weight:800;color:var(--accent)">'+pac+'</span>'
+      ? '<span class="pac-val">'+esc(pac)+'</span>'
       : '<span style="color:var(--muted)">—</span>';
 
     // Obs
     const obs = r.obs || "";
-    const obsCell = obs ? '<span style="font-size:10px;color:var(--gold)">'+obs+'</span>' : "";
-
-
+    const obsCell = obs ? '<span class="obs-val">'+esc(obs)+'</span>' : "";
 
     html2 += '<tr>'
-      +'<td><span style="color:var(--green);font-weight:700;font-size:11px">'+r.dt+'</span></td>'
-      +'<td><div style="display:flex;align-items:center;gap:8px">'
-        +'<div style="width:30px;height:30px;border-radius:50%;background:'+cor+'22;color:'+cor+';border:1.5px solid '+cor+'55;display:flex;align-items:center;justify-content:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:11px;flex-shrink:0">'+ini+'</div>'
-        +'<span style="font-weight:700;font-size:12px;color:'+cor+'">'+r.m+'</span>'
+      +'<td><span class="escala-data">'+esc(r.dt)+'</span></td>'
+      +'<td><div class="mot-cell">'
+        +'<div class="mot-av" style="background:'+cor+'22;color:'+cor+';border:1.5px solid '+cor+'55">'+esc(ini)+'</div>'
+        +'<span class="mot-nome" style="color:'+cor+'">'+esc(r.m)+'</span>'
       +'</div></td>'
       +'<td>'+veiCell+'</td>'
       +'<td>'+destCell+'</td>'
