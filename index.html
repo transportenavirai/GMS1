@@ -438,10 +438,10 @@ function parseCSV(text) {
     // Escala do dia: inclui tudo EXCETO viagens já confirmadas (ok=OK)
     if (ok !== "OK") escala.push(row);
 
-    // Estatísticas: exclui categorias especiais e viagens OK
+    // Estatísticas: exclui categorias especiais — MAS inclui viagens OK (histórico completo)
     let skip=false;
     for (const s of SKIP){if(destino.includes(s)){skip=true;break;}}
-    if (!skip && ok !== "OK") stats.push(row);
+    if (!skip) stats.push(row);
   }
 
   return {stats, escala};
@@ -457,7 +457,7 @@ async function fetchLive() {
     const res = await fetch(CSV_URL+"&cachebust="+Date.now(),{cache:"no-store"});
     if (!res.ok) throw new Error("HTTP "+res.status);
     const parsed = parseCSV(await res.text());
-    if (parsed.stats.length < 3 && parsed.escala.length < 3) throw new Error("Dados insuficientes — planilha publicada?");
+    if (parsed.stats.length < 3) throw new Error("Dados insuficientes — planilha publicada?");
     ALL_ROWS = parsed.stats;
     ESCALA_ROWS = parsed.escala;
     retryCount = 0;
