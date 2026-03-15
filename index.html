@@ -419,7 +419,10 @@ function parseCSV(text) {
     if (!motorista || motorista==="MOTORISTA" || motorista.startsWith("-")) continue;
     if (/^[0-9]{1,2}\/[0-9]{1,2}/.test(motorista)) continue;
     if (!destino   || destino==="DESTINO" || destino.startsWith("-")) continue;
-    if (!veiculo   || veiculo.startsWith("-") || veiculo==="VEICULO" || veiculo==="VEICULOS / MOTORISTAS") continue;
+    // Permite col A vazia para FERIAS, RECESSO e DISPONIVEL
+    const isVeiOpcional = destino.includes("FERIAS")||destino.includes("RECESSO")||destino.includes("DISPONIVEL");
+    if (!isVeiOpcional && (!veiculo || veiculo.startsWith("-") || veiculo==="VEICULO" || veiculo==="VEICULOS / MOTORISTAS")) continue;
+    if (veiculo.startsWith("-") || veiculo==="VEICULO" || veiculo==="VEICULOS / MOTORISTAS") continue;
 
     const saida=(p[3]||"").trim(), pac=(p[4]||"").trim(), obs=(p[5]||"").trim();
     const data=(p[6]||"").trim(), ok=(p[7]||"").trim().toUpperCase(), mes=(p[8]||"").toUpperCase();
