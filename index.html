@@ -371,7 +371,6 @@ footer p{font-size:10px;color:var(--muted)}
 // Aba Registro Geral (gid=936830313) — estatísticas
 // Aba SHARE (gid=1682988408) — escala do dia
 const CSV_URL    = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=936830313&single=true&output=csv";
-const SHARE_URL   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQI6auY_9xHSJGEj2yjUXBCGyx3K9acP3qRApIm6EqTuXw6rtd6BArAH12OAJx8HtRqvpbDsiawgbc2/pub?gid=1682988408&single=true&output=csv";
 const REFRESH_MS = 60 * 1000;
 const RETRY_MS   = 10 * 1000;
 const MAX_RETRY  = 5;
@@ -379,7 +378,7 @@ const SKIP = new Set(["FERIAS","RECESSO","RURAL","HEMODIALISE","MALOTE","DISPONI
 const COLORS = ["#00d4ff","#2ecc8f","#ffc14d","#9b7fff","#ff8c42","#e85555","#f06292","#4dd0e1","#a5d6a7","#ffb74d","#ce93d8","#80cbc4"];
 
 // ── ESTADO ───────────────────────────────────────────────────────────
-let ALL_ROWS = [], MOT_COLORS = {}, SHARE_ROWS = [];
+let ALL_ROWS = [], MOT_COLORS = {};
 let selMes = new Set(), selSem = new Set(), selMot = new Set(), selVei = new Set();
 let retryCount = 0, cdTimer = null, nextAt = null, firstLoad = true;
 
@@ -407,137 +406,18 @@ function parseCSV(text) {
     if (!destino   || destino==="DESTINO"     || destino.startsWith("-"))   continue;
     if (!veiculo   || veiculo.startsWith("-") || veiculo==="VEICULO" || veiculo==="VEICULOS / MOTORISTAS") continue;
     let skip=false; for (const s of SKIP){if(destino.includes(s)){skip=true;break;}} if(skip) continue;
-    const data=(p[6]||"").trim(), mes=(p[8]||"").toUpperCase(), ok=(p[7]||"").trim().toUpperCase();
+    const saida=(p[3]||"").trim(), pac=(p[4]||"").trim(), obs=(p[5]||"").trim(), data=(p[6]||"").trim(), ok=(p[7]||"").trim().toUpperCase(), mes=(p[8]||"").toUpperCase();
     if (!data || !data.includes("/")) continue;
     let day=1, wk="Sem 1", mesFinal=mes||"?";
     try{ const dp=data.split("/"); day=parseInt(dp[0])||1; wk="Sem "+Math.min(5,Math.floor((day-1)/7)+1);
       if(!mes||mes==="?"){ const mn=parseInt(dp[1])||0; if(mn>=1&&mn<=12) mesFinal=mNames[mn]; } }catch(e){}
-    out.push({v:veiculo,m:motorista,d:destino,dt:data,mes:mesFinal,day,wk,ok:ok==="OK"?"OK":""});
+    out.push({v:veiculo,m:motorista,d:destino,dt:data,mes:mesFinal,day,wk,ok:ok==="OK"?"OK":"",saida:saida,pac:pac,obs:obs});
   }
   return out;
 }
 
 
-// ── PARSE CSV DA ABA SHARE ────────────────────────────────────────────
-function parseShare(text) {
-  // Estrutura aba SHARE:
-  // A=Placa  B=MOTORISTA  C=VEICULO  D=DESTINO  E=SAIDA  F=PACIENTES  G=OBS  H=Data Saida
-  // Cabeçalho na linha 1 — ignorado
-  // Linhas com motorista "---" = veículos reserva sem motorista → descartar
-  // Linhas sem data válida → descartar
-  // Datas passadas → descartar
 
-  // ── Parser CSV robusto: une linhas físicas que fazem parte do mesmo registro ──
-  function parseRecords(raw) {
-    const records = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i];
-      if (c === '"') {
-        inQ = !inQ;
-        cur += c;
-      } else if (c === '\n' && !inQ) {
-        records.push(cur.replace(/\r$/, ''));
-        cur = '';
-      } else {
-        cur += c;
-      }
-    }
-    if (cur.trim()) records.push(cur);
-    return records;
-  }
-
-  function splitLine(line) {
-    const p = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQ = !inQ; }
-      else if (c === ',' && !inQ) { p.push(cur.trim()); cur = ''; }
-      else { cur += c; }
-    }
-    p.push(cur.trim());
-    // Remove aspas externas de cada campo
-    return p.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
-  }
-
-  function parseDataBR(s) {
-    // Lê coluna H como texto simples: DD/MM/YYYY
-    if (!s) return null;
-    s = s.trim();
-    // Aceita DD/MM/YYYY ou D/M/YYYY — nada mais
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (!m) return null;
-    const d = new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
-    d.setHours(0,0,0,0);
-    return d;
-  }
-
-  function fmtDt(d) {
-    return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();
-  }
-
-  const out  = [];
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-
-  // Une linhas físicas que pertencem ao mesmo registro CSV
-  const records = parseRecords(text);
-
-  for (let li = 1; li < records.length; li++) { // li=1 pula cabeçalho
-    const p = splitLine(records[li]);
-    if (p.length < 2) continue;
-
-    const placa    = (p[0] || '').trim();
-    const motorista= (p[1] || '').trim().toUpperCase();
-    const veiculo  = (p[2] || '').trim();
-    const destino  = (p[3] || '').trim();
-    const saida    = (p[4] || '').trim();
-    const pacientes= (p[5] || '').trim();
-    const obs      = (p[6] || '').trim();
-    const dataBrut = (p[7] || '').trim();
-
-    // ── Filtros de limpeza ──────────────────────────────────────────
-    if (!motorista) continue;
-    if (/^[-–—\s]+$/.test(motorista)) continue;        // só traços
-    if (motorista === 'MOTORISTA') continue;             // cabeçalho
-    if (/^\d/.test(motorista)) continue;                 // começa com número
-    if (motorista.length > 25) continue;                 // texto solto longo
-    if (motorista.includes('PODENDO') || motorista.includes('MUDAN')) continue;
-
-    // ── Rejeita sem data ────────────────────────────────────────────
-    if (!dataBrut) continue;
-    const dataObj = parseDataBR(dataBrut);
-    if (!dataObj) continue;
-
-    // ── Rejeita datas passadas ──────────────────────────────────────
-    if (dataObj < hoje) continue;
-
-    const isHoje = dataObj.getTime() === hoje.getTime();
-    const dtStr  = fmtDt(dataObj);
-
-    // ── Veículo: col C se válida, senão col A (placa) ───────────────
-    const veiExibir = (veiculo && !/^[-–—\s]+$/.test(veiculo)) ? veiculo : placa;
-
-    // ── Status ──────────────────────────────────────────────────────
-    const DU = destino.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    let status = 'ativo';
-    if      (DU.includes('FERIAS') || DU.includes('RECESSO'))    status = 'ferias';
-    else if (DU.includes('RURAL'))                                status = 'rural';
-    else if (DU.includes('HEMODIALISE') || DU.includes('HEMO'))  status = 'hemo';
-    else if (DU.includes('MALOTE'))                               status = 'malote';
-    else if (!destino || /^[-–—\s]+$/.test(destino) || DU.includes('DISPONIVEL')) status = 'disponivel';
-
-    out.push({ placa, motorista, veiculo: veiExibir, destino, saida, pacientes, obs, dt: dtStr, dataObj, status, isHoje });
-  }
-
-  // Ordena: por data → por horário de saída
-  out.sort((a, b) => {
-    const da = a.dataObj.getTime(), db = b.dataObj.getTime();
-    if (da !== db) return da - db;
-    return (a.saida || '99:99').localeCompare(b.saida || '99:99');
-  });
-
-  return out;
-}
 
 // ── FETCH ─────────────────────────────────────────────────────────────
 async function fetchLive() {
@@ -559,8 +439,6 @@ async function fetchLive() {
       firstLoad=false;
     }
     buildFilters(); render();
-    // Também busca aba SHARE (escala do dia)
-    fetchShare();
     nextAt = Date.now()+REFRESH_MS;
     const tag=document.getElementById("statusTag");
     tag.className="tag tag-live";
@@ -597,17 +475,7 @@ document.addEventListener("visibilitychange",()=>{
 });
 
 
-// ── FETCH ABA SHARE (escala do dia) ──────────────────────────────────
-async function fetchShare() {
-  try {
-    const res = await fetch(SHARE_URL+"&cachebust="+Date.now(),{cache:"no-store"});
-    if (!res.ok) return;
-    SHARE_ROWS = parseShare(await res.text());
-    renderEscala();
-  } catch(e) {
-    console.warn("Erro ao buscar aba SHARE:", e.message);
-  }
-}
+
 
 // ── FILTROS ───────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -615,7 +483,6 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
   document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
-  if (tab === 'escala' && SHARE_ROWS.length === 0) fetchShare();
 }
 
 function getFiltered(){return ALL_ROWS.filter(r=>(selMes.size===0||selMes.has(r.mes))&&(selSem.size===0||selSem.has(r.wk))&&(selMot.size===0||selMot.has(r.m))&&(selVei.size===0||selVei.has(r.v)));}
@@ -700,111 +567,110 @@ function render(){
   const lsorted=[...rows].sort((a,b)=>b.dt.split("/").reverse().join("").localeCompare(a.dt.split("/").reverse().join("")));
   document.getElementById("logSub").textContent=`${lsorted.length} viagens`;
   document.getElementById("logTbody").innerHTML=lsorted.slice(0,300).map(r=>`<tr><td style="color:var(--muted)">${r.dt}</td><td><span style="color:${MOT_COLORS[r.m]||'#fff'};font-weight:600">${r.m}</span></td><td>📍 ${r.d}</td><td style="color:var(--muted);font-size:10px">${r.v}</td><td><span style="background:rgba(0,212,255,.1);color:var(--accent);border:1px solid rgba(0,212,255,.2);padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700">${r.mes}</span></td><td style="color:var(--muted);font-size:10px">${r.wk}</td></tr>`).join("");
+  // Atualiza escala do dia sempre que os dados são atualizados
+  renderEscala();
 }
 
 
 // ── RENDER ESCALA DO DIA ──────────────────────────────────────────────
 function renderEscala() {
-  const hoje  = new Date(); hoje.setHours(0,0,0,0);
-  const rows  = SHARE_ROWS;
+  // Usa ALL_ROWS (Registro Geral) — filtra pelo dia de hoje
+  // Estrutura: {v, m, d, dt, mes, wk, ok, saida, pacientes, obs}
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+  // Formata hoje como DD/MM/YYYY para comparar com r.dt
+  const hd = ("0"+hoje.getDate()).slice(-2);
+  const hm = ("0"+(hoje.getMonth()+1)).slice(-2);
+  const hy = hoje.getFullYear();
+  const hojeStr = hd+"/"+hm+"/"+hy;
+
+  // Filtra viagens de hoje (todos os status, incluindo Rural/Hemo/Malote para mostrar tudo)
+  const rows = ALL_ROWS.filter(function(r) {
+    return r.dt && r.dt.startsWith(hd+"/"+hm) && r.ok !== "OK";
+  });
+
+  // KPIs — conta só viagens reais (exclui Rural, Hemo, Malote, Disponivel)
+  const SKIP_KPI = new Set(["RURAL","HEMODIALISE","MALOTE","DISPONIVEL","TRANSITO","TRÂNSITO"]);
+  const ativas   = rows.filter(function(r) {
+    const du = r.d.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    return !Array.from(SKIP_KPI).some(function(s){ return du.includes(s); });
+  });
+  const totalPac = ativas.reduce(function(s,r){ return s+(parseInt(r.pacientes||r.pac)||0); }, 0);
+  const destinos = new Set(ativas.map(function(r){ return r.d; })).size;
+
+  document.getElementById("ekTotal").textContent  = rows.length   || "--";
+  document.getElementById("ekAtivos").textContent = ativas.length || "--";
+  document.getElementById("ekDest").textContent   = destinos      || "--";
+  document.getElementById("ekPac").textContent    = totalPac      || "--";
+  document.getElementById("escalaCount").textContent = rows.length + " viagem" + (rows.length!==1?"s":"") + " · " + hojeStr;
+  document.getElementById("escalaInfo").textContent  = "Atualizado às " + new Date().toLocaleTimeString("pt-BR");
+
   const tbody = document.getElementById("escalaTbody");
 
-  // ── KPIs (só conta linhas de HOJE) ──────────────────────────────
-  const deHoje   = rows.filter(r => r.isHoje);
-  const ativos   = deHoje.filter(r => r.status === "ativo");
-  const totalPac = ativos.reduce((s,r) => s+(parseInt(r.pacientes)||0), 0);
-  const destinos = new Set(ativos.map(r => r.destino)).size;
-
-  document.getElementById("ekTotal").textContent  = deHoje.length  || "--";
-  document.getElementById("ekAtivos").textContent = ativos.length  || "--";
-  document.getElementById("ekDest").textContent   = destinos       || "--";
-  document.getElementById("ekPac").textContent    = totalPac       || "--";
-  document.getElementById("escalaCount").textContent =
-    rows.length + " linha" + (rows.length!==1?"s":"") + " · hoje e próximas";
-  document.getElementById("escalaInfo").textContent =
-    "Atualizado às " + new Date().toLocaleTimeString("pt-BR");
-
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">📭 Nenhuma viagem encontrada na aba SHARE<br><small style="font-size:10px">Verifique se a aba está publicada como CSV</small></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">📭 Nenhuma viagem registrada para hoje · ' + hojeStr + '</td></tr>';
     return;
   }
 
-  let html2  = "";
-  let lastDt = "~~NUNCA~~";
+  // Ordena por horário de saída
+  const sorted = rows.slice().sort(function(a,b){
+    return (a.saida||a.s||"99:99").localeCompare(b.saida||b.s||"99:99");
+  });
 
-  rows.forEach(r => {
-    // ── Separador de data (só quando muda) ────────────────────────
-    const dtKey = r.dt || "sem-data";
-    if (dtKey !== lastDt) {
-      lastDt = dtKey;
-      let label = "";
-      if (r.isHoje) {
-        const diasSemana = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
-        label = `<span style="color:var(--green);font-weight:800">● HOJE · ${r.dt} · ${diasSemana[hoje.getDay()]}</span>`;
-      } else if (r.dataObj) {
-        const dias = Math.round((r.dataObj - hoje) / 864e5);
-        const suf  = dias===1 ? "amanhã" : `em ${dias} dias`;
-        label = `<span style="color:var(--accent);font-weight:700">${r.dt}</span><span style="color:var(--muted);font-weight:400;margin-left:8px">· ${suf}</span>`;
-      } else {
-        label = `<span style="color:var(--muted)">${r.dt || "Sem data"}</span>`;
-      }
-      html2 += `<tr class="row-sep"><td colspan="7">${label}</td></tr>`;
-    }
+  let html2 = "";
 
-    // ── Coluna Data ──────────────────────────────────────────────
-    const dtCell = r.isHoje
-      ? `<span style="color:var(--green);font-weight:700;font-size:11px">${r.dt}</span>`
-      : `<span style="color:var(--muted);font-size:11px">${r.dt||"—"}</span>`;
+  sorted.forEach(function(r) {
+    const cor  = MOT_COLORS[r.m] || "#aaa";
+    const pts  = r.m.split(" ");
+    const ini  = pts.length>=2 ? pts[0][0]+pts[1][0] : r.m.substring(0,2);
 
-    // ── Coluna Motorista (avatar + nome colorido) ─────────────────
-    const cor = MOT_COLORS[r.motorista] || "#aaa";
-    const pts = r.motorista.split(" ");
-    const ini = pts.length>=2 ? pts[0][0]+pts[1][0] : r.motorista.substring(0,2);
-    const motCell = `<div class="mot-cell">
-      <div class="mot-av" style="background:${cor}22;color:${cor};border:1.5px solid ${cor}55">${ini}</div>
-      <span class="mot-nome" style="color:${cor}">${r.motorista}</span>
-    </div>`;
+    // Veículo
+    const vei = r.v || r.veiculo || "";
+    const veiCell = vei
+      ? '<span style="font-size:10px;font-weight:700;color:var(--muted);background:var(--s2);border:1px solid var(--border);padding:2px 7px;border-radius:4px;white-space:nowrap">'+vei+'</span>'
+      : '<span style="color:var(--muted)">—</span>';
 
-    // ── Coluna Veículo ───────────────────────────────────────────
-    const veiCell = r.veiculo && !/^[-–—\s]+$/.test(r.veiculo)
-      ? `<span class="vei-badge">${r.veiculo}</span>`
-      : `<span style="color:var(--muted)">—</span>`;
-
-    // ── Coluna Destino ───────────────────────────────────────────
+    // Destino
+    const dest = r.d || "";
+    const DU   = dest.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     let destCell = "";
-    const D = r.destino || "";
-    if      (r.status==="ferias")      destCell = `<span style="color:var(--muted);font-style:italic">🏖️ ${D||"Férias"}</span>`;
-    else if (r.status==="rural")       destCell = `<span style="color:#8ab08a">🌾 ${D}</span>`;
-    else if (r.status==="hemo")        destCell = `<span style="color:#8aaabb">🏥 ${D}</span>`;
-    else if (r.status==="malote")      destCell = `<span style="color:var(--muted)">📦 ${D}</span>`;
-    else if (r.status==="disponivel")  destCell = `<span style="color:var(--muted);font-style:italic">⬜ DISPONIVEL</span>`;
-    else destCell = `<b style="color:var(--text)">${D}</b>`;
+    if      (DU.includes("FERIAS")||DU.includes("RECESSO"))   destCell='<span style="color:var(--muted);font-style:italic">🏖️ '+dest+'</span>';
+    else if (DU.includes("RURAL"))                             destCell='<span style="color:#8ab08a">🌾 '+dest+'</span>';
+    else if (DU.includes("HEMODIALISE")||DU.includes("HEMO")) destCell='<span style="color:#8aaabb">🏥 '+dest+'</span>';
+    else if (DU.includes("MALOTE"))                            destCell='<span style="color:var(--muted)">📦 '+dest+'</span>';
+    else if (DU.includes("DISPONIVEL"))                        destCell='<span style="color:var(--muted);font-style:italic">⬜ DISPONIVEL</span>';
+    else                                                       destCell='<b style="color:var(--text)">'+dest+'</b>';
 
-    // ── Coluna Saída ─────────────────────────────────────────────
-    const saidaCell = r.saida
-      ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:var(--green)">${r.saida}</span>`
-      : `<span style="color:var(--muted)">—</span>`;
+    // Saída
+    const saida = r.saida || r.s || "";
+    const saidaCell = saida
+      ? '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:18px;font-weight:800;color:var(--green)">'+saida+'</span>'
+      : '<span style="color:var(--muted)">—</span>';
 
-    // ── Coluna Pacientes ─────────────────────────────────────────
-    const pacCell = (r.pacientes && r.status==="ativo")
-      ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:800;color:var(--accent)">${r.pacientes}</span>`
-      : `<span style="color:var(--muted)">—</span>`;
+    // Pacientes
+    const pac = r.pacientes || r.pac || "";
+    const pacCell = pac
+      ? '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:16px;font-weight:800;color:var(--accent)">'+pac+'</span>'
+      : '<span style="color:var(--muted)">—</span>';
 
-    // ── Coluna Obs ───────────────────────────────────────────────
-    const obsCell = r.obs
-      ? `<span style="font-size:10px;color:var(--gold);line-height:1.4">${r.obs}</span>`
-      : "";
+    // Obs
+    const obs = r.obs || "";
+    const obsCell = obs ? '<span style="font-size:10px;color:var(--gold)">'+obs+'</span>' : "";
 
-    const rowCls = r.isHoje ? "row-hoje" : "";
-    html2 += `<tr class="${rowCls}">
-      <td>${dtCell}</td>
-      <td>${motCell}</td>
-      <td>${veiCell}</td>
-      <td>${destCell}</td>
-      <td>${saidaCell}</td>
-      <td>${pacCell}</td>
-      <td>${obsCell}</td>
-    </tr>`;
+
+
+    html2 += '<tr>'
+      +'<td><span style="color:var(--green);font-weight:700;font-size:11px">'+r.dt+'</span></td>'
+      +'<td><div style="display:flex;align-items:center;gap:8px">'
+        +'<div style="width:30px;height:30px;border-radius:50%;background:'+cor+'22;color:'+cor+';border:1.5px solid '+cor+'55;display:flex;align-items:center;justify-content:center;font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:11px;flex-shrink:0">'+ini+'</div>'
+        +'<span style="font-weight:700;font-size:12px;color:'+cor+'">'+r.m+'</span>'
+      +'</div></td>'
+      +'<td>'+veiCell+'</td>'
+      +'<td>'+destCell+'</td>'
+      +'<td>'+saidaCell+'</td>'
+      +'<td>'+pacCell+'</td>'
+      +'<td>'+obsCell+'</td>'
+      +'</tr>';
   });
 
   tbody.innerHTML = html2;
